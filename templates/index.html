@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NASA Exoplanet Hunting</title>
+    <meta name="color-scheme" content="dark light">
+    <style>
+      :root{
+        --bg: #000;                 /* site background */
+        --ink: #fff;                /* base text */
+        --muted:#c7c7c7;            /* secondary text */
+        --ink-weak:#9aa0a6;
+        --panel:#0b0b0b;            /* panels */
+        --line:#2b2b2b;             /* hairline */
+        --banner:#1c4fa3;           /* top blue banner */
+        --accent:#e24b3a;           /* NASA red button */
+        --accent-2:#ff6b57;
+        --focus:#ffd54a;
+
+        --radius:14px;
+        --pad:clamp(16px,2vw,24px);
+        --maxw:1200px;
+
+        --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, Helvetica, Arial, "Noto Sans", sans-serif;
+      }
+
+      /* ====== Base ====== */
+      *,*::before,*::after{box-sizing:border-box}
+      html,body{height:100%}
+      body{
+        margin:0; font-family:var(--sans); color:var(--ink); background:var(--bg);
+        -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+      }
+      img{max-width:100%; display:block}
+      a{color:inherit; text-decoration:none}
+      a:focus-visible,button:focus-visible{outline:3px solid var(--focus); outline-offset:2px; border-radius:8px}
+      .container{max-width:var(--maxw); margin:0 auto; padding-inline:var(--pad)}
+      .visually-hidden{position:absolute!important; width:1px; height:1px; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; padding:0}
+
+      /* ====== Government funding banner ====== */
+      .banner{
+        background:var(--banner); color:#fff; text-align:center; font-weight:700;
+        padding:.6rem .8rem; font-size:.95rem;
+      }
+      .banner a{ text-decoration:underline }
+
+      /* ====== Navbar ====== */
+      header{border-bottom:1px solid var(--line); background:#0a0a0a}
+      .nav{
+        display:grid; align-items:center; grid-template-columns: 1fr auto 1fr;
+        min-height:64px; gap:12px;
+      }
+      .left, .right{display:flex; align-items:center; gap:14px}
+      .logo{
+        width:38px; height:38px; border-radius:50%;
+        background:
+          radial-gradient(circle at 36% 34%, #fff 0 22%, transparent 23%),
+          radial-gradient(circle at 65% 60%, #e24b3a 0 80%, #e24b3a 81% 100%);
+        display:grid; place-items:center; border:2px solid #fff; justify-self:center;
+      }
+      .left a, .right a{color:#eaeaea; font-weight:600}
+      .caret{display:inline-block; transform:translateY(-2px)}
+      .search{
+        display:flex; align-items:center; gap:8px; background:#121212; border:1px solid var(--line);
+        border-radius:999px; padding:.45rem .65rem .45rem .6rem; min-width:220px;
+      }
+      .search input{
+        background:transparent; border:none; color:#eaeaea; outline:none; width:100%;
+      }
+      .pill{display:inline-flex; align-items:center; gap:.4rem; padding:.4rem .65rem; background:#121212; border:1px solid var(--line); border-radius:999px}
+      .live{font-size:.7rem; font-weight:900; color:#fff; background:#e24b3a; border-radius:6px; padding:.05rem .35rem; margin-left:6px}
+
+      /* ====== Hero ====== */
+      .hero{
+        background:#000;
+        padding: clamp(36px, 5vw, 64px) 0 clamp(28px, 4vw, 40px);
+      }
+      .hero-grid{
+        display:grid; grid-template-columns: 1.2fr .8fr; gap:clamp(16px, 3vw, 40px); align-items:center;
+      }
+      @media (max-width: 980px){ .hero-grid{grid-template-columns:1fr} }
+      .kicker{
+        letter-spacing:.25em; text-transform:uppercase; color:var(--ink-weak);
+        font-size:.8rem; font-weight:700; margin:0 0 .5rem;
+      }
+      h1{font-size: clamp(2.2rem, 6.5vw, 4.2rem); line-height:1.06; margin:.2rem 0 .8rem}
+      .lead{color:#e0e0e0; font-size: clamp(1rem, 2.1vw, 1.25rem); max-width:40ch; margin-bottom:1.1rem}
+      .cta{
+        display:inline-block; background:linear-gradient(180deg,var(--accent),var(--accent-2));
+        color:#fff; font-weight:800; border:none; padding:.9rem 1.1rem; border-radius:10px;
+        box-shadow:0 8px 22px rgba(226,75,58,.35);
+      }
+
+      /* ====== Planet Explorer Specific Styles ====== */
+      .subtitle {
+        color: var(--muted);
+        font-size: 1.1rem;
+        margin-top: 0.5rem;
+        text-align: center;
+      }
+      
+      .search-section {
+        margin: 2rem 0 3rem;
+      }
+      
+      .input-group {
+        display: flex;
+        max-width: 600px;
+        margin: 0 auto;
+        gap: 12px;
+        position: relative;
+      }
+      
+      .input-group input {
+        flex: 1;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 0.85rem 1rem;
+        color: var(--ink);
+        font-size: 1rem;
+      }
+      
+      .input-group button {
+        background: linear-gradient(180deg, var(--accent), var(--accent-2));
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0 1.5rem;
+        font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      
+      .suggestions {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-top: none;
+        border-radius: 0 0 8px 8px;
+        max-height: 200px;
+        overflow-y: auto;
+        z-index: 10;
+        display: none;
+      }
+      
+      .suggestions.active {
+        display: block;
+      }
+      
+      .suggestion-item {
+        padding: 0.75rem 1rem;
+        cursor: pointer;
+        border-bottom: 1px solid var(--line);
+      }
+      
+      .suggestion-item:hover {
+        background: rgba(255, 255, 255, 0.05);
+      }
+      
+      .suggestion-item:last-child {
+        border-bottom: none;
+      }
+      
+      .planet-card, .error-card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 1.5rem;
+        margin: 2rem 0;
+      }
+      
+      .planet-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid var(--line);
+      }
+      
+      .planet-header h2 {
+        margin: 0;
+        font-size: 1.8rem;
+      }
+      
+      .status-badge {
+        padding: 0.4rem 0.8rem;
+        border-radius: 999px;
+        font-size: 0.8rem;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+      
+      .status-badge.planet {
+        background: rgba(226, 75, 58, 0.2);
+        color: var(--accent);
+        border: 1px solid rgba(226, 75, 58, 0.4);
+      }
+      
+      .info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+      }
+      
+      .info-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 0.8rem 0;
+        border-bottom: 1px solid var(--line);
+      }
+      
+      .info-item label {
+        color: var(--muted);
+        font-weight: 600;
+      }
+      
+      .info-item span {
+        font-weight: 700;
+      }
+      
+      .description h3 {
+        margin-top: 0;
+        margin-bottom: 0.8rem;
+        font-size: 1.2rem;
+      }
+      
+      .description p {
+        line-height: 1.6;
+        color: var(--muted);
+      }
+      
+      .hidden {
+        display: none;
+      }
+      
+      .error-card {
+        border-left: 4px solid var(--accent);
+      }
+      
+      .error-card h3 {
+        margin-top: 0;
+        color: var(--accent);
+      }
+      
+      footer {
+        color: var(--ink-weak);
+        border-top: 1px solid var(--line);
+        padding: 24px 0 60px;
+        text-align: center;
+        margin-top: 2rem;
+      }
+
+      .moon {
+        aspect-ratio: 1 / 1; 
+        border-radius:999px; 
+        margin-inline:auto; 
+        width:min(420px, 70%);
+        background:
+          radial-gradient(circle at 30% 40%, rgba(255,255,255,.18), transparent 45%),
+          url('https://cdn.freebiesupply.com/logos/large/2x/nasa-1-logo-png-transparent.png') center/cover no-repeat;
+      }
+
+      /* ====== Link rows (three columns) ====== */
+      .rows{border-top:1px solid var(--line); margin-top:36px; padding-top:24px}
+      .rowgrid{display:grid; gap:28px; grid-template-columns: repeat(3,1fr)}
+      @media (max-width: 900px){ .rowgrid{grid-template-columns:1fr} }
+      .row{
+        position:relative; padding-top:16px;
+        border-top:1px solid var(--line);
+      }
+      .eyebrow{font-size:.75rem; letter-spacing:.28em; color:var(--ink-weak); text-transform:uppercase}
+      .row a{
+        display:inline-flex; gap:.5rem; align-items:center; margin-top:.35rem; font-weight:800; color:#eaeaea;
+      }
+      .dot{width:8px; height:8px; background:#e24b3a; border-radius:50%}
+
+      /* ====== Bottom notice ====== */
+      .notice{
+        background:#fff; color:#111; border-radius:12px; padding:18px 20px; margin: clamp(18px,4vw,48px) auto;
+        max-width: var(--maxw);
+        box-shadow: 0 10px 24px rgba(0,0,0,.25);
+      }
+      .notice a{color:#0b57d0; text-decoration:underline}
+      .notice strong{letter-spacing:.01em}
+
+      /* Loading indicator */
+      .loading {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 3px solid rgba(255,255,255,.3);
+        border-radius: 50%;
+        border-top-color: #fff;
+        animation: spin 1s ease-in-out infinite;
+      }
+      
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
+</head>
+<body>
+
+<!-- Top funding banner -->
+<p class="banner" role="status">
+  NASA Exoplanet Hunting - Discover information about exoplanets discovered by NASA missions
+</p>
+
+<!-- Header / Nav -->
+<header>
+  <div class="container nav" role="navigation" aria-label="Primary">
+    <div class="left">
+      <strong>AstroTuff Dyanmics</strong>
+    </div>
+    <div class="right">
+      <a href="#">Presentation</a>
+      <a href="#">Video</a>
+      <a class="pill" href="https://github.com/alexsteinerr/hunting_exoplanets">GitHub</a>
+    </div>
+  </div>
+</header>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="container hero-grid">
+    <div>
+      <p class="kicker">Exoplanet Archive</p>
+      <h1>NASA Exoplanet Hunting</h1>
+      <p class="lead">
+        Discover detailed information about exoplanets discovered by NASA missions. Explore planetary characteristics, orbits, and scientific data from the NASA Exoplanet Archive.
+      </p>
+      <div class="search-section">
+        <form id="planetForm">
+          <div class="input-group">
+            <input type="text" id="planetName" name="planet_name" placeholder="Search for an exoplanet (e.g., Kepler-186f)" required autocomplete="off">
+            <button type="submit">Explore</button>
+            <div id="suggestions" class="suggestions"></div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div>
+      <figure class="moon" role="img" aria-label="Phase of the Moon — placeholder image"></figure>
+    </div>
+  </div>
+
+  <!-- Results Section -->
+  <div class="container">
+    <div id="resultSection" class="result-section hidden">
+      <div class="planet-card">
+        <div class="planet-header">
+          <h2 id="planetTitle">Planet Name</h2>
+          <span id="planetStatus" class="status-badge">Exoplanet</span>
+        </div>
+        
+        <div class="planet-info">
+          <div class="info-grid">
+            <div class="info-item">
+              <label>Host Star:</label>
+              <span id="planetHost">-</span>
+            </div>
+            <div class="info-item">
+              <label>TIC ID:</label>
+              <span id="planetTicId">-</span>
+            </div>
+            <div class="info-item">
+              <label>Orbital Period:</label>
+              <span id="planetOrbit">-</span>
+            </div>
+            <div class="info-item">
+              <label>Radius (Earth):</label>
+              <span id="planetRadiusEarth">-</span>
+            </div>
+            <div class="info-item">
+              <label>Radius (Jupiter):</label>
+              <span id="planetRadiusJupiter">-</span>
+            </div>
+            <div class="info-item">
+              <label>Transit Depth:</label>
+              <span id="planetTransitDepth">-</span>
+            </div>
+            <div class="info-item">
+              <label>Stellar Radius:</label>
+              <span id="planetStellarRadius">-</span>
+            </div>
+            <div class="info-item">
+              <label>Stellar Temperature:</label>
+              <span id="planetStellarTemp">-</span>
+            </div>
+            <div class="info-item">
+              <label>Distance:</label>
+              <span id="planetDistance">-</span>
+            </div>
+          </div>
+          
+          <div class="description">
+            <h3>Description</h3>
+            <p id="planetDescription">-</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="errorSection" class="error-section hidden">
+      <div class="error-card">
+        <h3>Exoplanet Not Found</h3>
+        <p>This exoplanet was not found in the NASA Exoplanet Archive database.</p>
+        <p>Please try searching for another exoplanet name.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Three link rows -->
+  <div class="container rows">
+    <div class="rowgrid">
+      <div class="row">
+        <div class="eyebrow">NASA Missions</div>
+        <a href="https://exoplanetarchive.ipac.caltech.edu/cgi-bin/TblView/nph-tblView?app=ExoTbls&config=cumulative">TESS Data <span class="dot" aria-hidden="true"></span></a>
+        <br>
+        <a href="https://exoplanetarchive.ipac.caltech.edu/cgi-bin/TblView/nph-tblView?app=ExoTbls&config=TOI">Kepler Data <span class="dot" aria-hidden="true"></span></a>
+      </div>
+      <div class="row">
+        <div class="eyebrow">Exoplanet Archive</div>
+        <a href="https://exoplanetarchive.ipac.caltech.edu/">Full Database Access <span class="dot" aria-hidden="true"></span></a>
+      </div>
+      <div class="row">
+        <div class="eyebrow">Education</div>
+        <a href="https://science.nasa.gov/exoplanets/">Exoplanet Resources <span class="dot" aria-hidden="true"></span></a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Bottom white notice -->
+<div class="notice" role="note" aria-live="polite">
+  <strong>NASA Exoplanet Hunting</strong> is an educational tool providing information about exoplanets discovered by NASA missions. 
+  Data is sourced from the NASA Exoplanet Archive at Caltech.
+</div>
+
+<footer>
+  <div class="container">
+    <p> AstroTuff Dynamics &copy; 2025 | NASA Exoplanet Hunting</p>
+  </div>
+</footer>
+
+<script>
+  // Debounce function to limit API calls
+  function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+      const later = () => {
+        clearTimeout(timeout);
+        func(...args);
+      };
+      clearTimeout(timeout);
+      timeout = setTimeout(later, wait);
+    };
+  }
+
+  // Fetch exoplanet data from your backend
+  async function fetchExoplanetData(planetName) {
+    try {
+      const response = await fetch('/search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: 'planet_name=' + encodeURIComponent(planetName)
+      });
+      
+      if (!response.ok) {
+        throw new Error('Network response was not ok');
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching exoplanet data:', error);
+      return null;
+    }
+  }
+
+  // Fetch exoplanet suggestions while typing
+  async function fetchSuggestions(query) {
+    if (query.length < 2) {
+      document.getElementById('suggestions').classList.remove('active');
+      return;
+    }
+    
+    try {
+      // This would be a separate endpoint in your backend that returns suggestions
+      const response = await fetch('/suggestions?q=' + encodeURIComponent(query));
+      
+      if (!response.ok) {
+        throw new Error('Network response was not ok');
+      }
+      
+      const suggestions = await response.json();
+      displaySuggestions(suggestions);
+    } catch (error) {
+      console.error('Error fetching suggestions:', error);
+    }
+  }
+
+  // Display suggestions in the dropdown
+  function displaySuggestions(suggestions) {
+    const suggestionsContainer = document.getElementById('suggestions');
+    suggestionsContainer.innerHTML = '';
+    
+    if (suggestions && suggestions.length > 0) {
+      suggestions.forEach(suggestion => {
+        const item = document.createElement('div');
+        item.className = 'suggestion-item';
+        item.textContent = suggestion;
+        item.addEventListener('click', () => {
+          document.getElementById('planetName').value = suggestion;
+          suggestionsContainer.classList.remove('active');
+          document.getElementById('planetForm').dispatchEvent(new Event('submit'));
+        });
+        suggestionsContainer.appendChild(item);
+      });
+      suggestionsContainer.classList.add('active');
+    } else {
+      suggestionsContainer.classList.remove('active');
+    }
+  }
+
+  // Initialize the application
+  document.addEventListener('DOMContentLoaded', function() {
+    const planetForm = document.getElementById('planetForm');
+    const planetInput = document.getElementById('planetName');
+    const suggestionsContainer = document.getElementById('suggestions');
+    
+    // Handle form submission
+    planetForm.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const planetName = planetInput.value.trim();
+      
+      if (!planetName) return;
+      
+      // Show loading state
+      const submitButton = planetForm.querySelector('button[type="submit"]');
+      const originalText = submitButton.textContent;
+      submitButton.innerHTML = '<span class="loading"></span>';
+      submitButton.disabled = true;
+      
+      const data = await fetchExoplanetData(planetName);
+      
+      // Restore button state
+      submitButton.textContent = originalText;
+      submitButton.disabled = false;
+      
+      if (data && data.is_planet) {
+        document.getElementById('planetTitle').textContent = data.name || planetName;
+        document.getElementById('planetStatus').textContent = 'Exoplanet';
+        document.getElementById('planetStatus').className = 'status-badge planet';
+        document.getElementById('planetHost').textContent = data.hostname || '-';
+        document.getElementById('planetTicId').textContent = data.tic_id || '-';
+        document.getElementById('planetOrbit').textContent = data.period_days ? `${data.period_days} days` : '-';
+        document.getElementById('planetRadiusEarth').textContent = data.radius_earth ? `${data.radius_earth} Earth radii` : '-';
+        document.getElementById('planetRadiusJupiter').textContent = data.radius_jupiter ? `${data.radius_jupiter} Jupiter radii` : '-';
+        document.getElementById('planetTransitDepth').textContent = data.transit_depth_ppm ? `${data.transit_depth_ppm} ppm` : '-';
+        document.getElementById('planetStellarRadius').textContent = data.stellar_radius ? `${data.stellar_radius} Solar radii` : '-';
+        document.getElementById('planetStellarTemp').textContent = data.stellar_teff ? `${data.stellar_teff} K` : '-';
+        document.getElementById('planetDistance').textContent = data.distance_pc ? `${data.distance_pc} pc` : '-';
+        
+        // Generate a description based on available data
+        let description = `${data.name || planetName} is an exoplanet`;
+        if (data.hostname) description += ` orbiting the star ${data.hostname}`;
+        if (data.period_days) description += ` with an orbital period of ${data.period_days} days`;
+        if (data.radius_earth) description += `. It has a radius of ${data.radius_earth} Earth radii`;
+        if (data.distance_pc) description += ` and is located approximately ${data.distance_pc} parsecs from Earth`;
+        description += '.';
+        
+        document.getElementById('planetDescription').textContent = description;
+        
+        document.getElementById('resultSection').classList.remove('hidden');
+        document.getElementById('errorSection').classList.add('hidden');
+      } else {
+        document.getElementById('errorSection').classList.remove('hidden');
+        document.getElementById('resultSection').classList.add('hidden');
+      }
+      
+      // Hide suggestions after search
+      suggestionsContainer.classList.remove('active');
+    });
+    
+    // Handle input for live search/suggestions
+    planetInput.addEventListener('input', debounce(function() {
+      const query = planetInput.value.trim();
+      fetchSuggestions(query);
+    }, 300));
+    
+    // Close suggestions when clicking outside
+    document.addEventListener('click', function(e) {
+      if (!planetInput.contains(e.target) && !suggestionsContainer.contains(e.target)) {
+        suggestionsContainer.classList.remove('active');
+      }
+    });
+    
+    // For demo purposes - in a real implementation, this would come from your backend
+    // This is a mock function to simulate suggestion data
+    window.fetchSuggestions = async function(query) {
+      // Simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Mock data - in a real implementation, this would come from your backend
+      const mockExoplanets = [
+        "Kepler-186f", "Kepler-452b", "TRAPPIST-1e", "Proxima Centauri b", 
+        "GJ 667 Cc", "HD 209458 b", "WASP-12b", "GJ 1214b", "HD 189733 b",
+        "Kepler-22b", "Kepler-62f", "Kepler-438b", "LHS 1140 b", "K2-18b"
+      ];
+      
+      return mockExoplanets.filter(name => 
+        name.toLowerCase().includes(query.toLowerCase())
+      );
+    };
+    
+    // Mock displaySuggestions for demo
+    window.displaySuggestions = function(suggestions) {
+      const suggestionsContainer = document.getElementById('suggestions');
+      suggestionsContainer.innerHTML = '';
+      
+      if (suggestions && suggestions.length > 0) {
+        suggestions.forEach(suggestion => {
+          const item = document.createElement('div');
+          item.className = 'suggestion-item';
+          item.textContent = suggestion;
+          item.addEventListener('click', () => {
+            document.getElementById('planetName').value = suggestion;
+            suggestionsContainer.classList.remove('active');
+            document.getElementById('planetForm').dispatchEvent(new Event('submit'));
+          });
+          suggestionsContainer.appendChild(item);
+        });
+        suggestionsContainer.classList.add('active');
+      } else {
+        suggestionsContainer.classList.remove('active');
+      }
+    };
+  });
+</script>
+
+</body>
+</html>

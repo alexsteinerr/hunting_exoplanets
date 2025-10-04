@@ -26,7 +26,7 @@ DENSE_SAMPLES = 1000  # Reduced for faster processing
 CHEB_DEGREE = 6
 
 # Multi-target analysis
-MAX_TARGETS = 200  # Set to None for all available targets
+MAX_TARGETS = 200000 
 SKIP_FAILED = True
 SAVE_INDIVIDUAL_RESULTS = True
 

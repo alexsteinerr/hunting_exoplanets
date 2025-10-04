@@ -6,7 +6,7 @@ def get_exoplanet_targets(limit: int = 200, use_api: bool = True, cache: bool = 
     """
     if use_api:
         try:
-            targets = create_target_list_from_api(limit=limit)
+            targets = create_target_list_from_api(use_tess=True, max_pages=None)
             if cache:
                 from utils.api_client import save_targets_to_csv
                 save_targets_to_csv(targets)
