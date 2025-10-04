@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NASA Planet Explorer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="nasa-header">
+                <h1>NASA PLANET EXPLORER</h1>
+                <div class="nasa-logo">🚀</div>
+            </div>
+            <p class="subtitle">Discover information about planets in our solar system</p>
+        </header>
+
+        <main>
+            <div class="search-section">
+                <form id="planetForm">
+                    <div class="input-group">
+                        <input type="text" id="planetName" name="planet_name" placeholder="Enter planet name (e.g., Earth, Mars, Jupiter)" required>
+                        <button type="submit">Explore</button>
+                    </div>
+                </form>
+            </div>
+
+            <div id="resultSection" class="result-section hidden">
+                <div class="planet-card">
+                    <div class="planet-header">
+                        <h2 id="planetTitle">Planet Name</h2>
+                        <span id="planetStatus" class="status-badge">Planet</span>
+                    </div>
+                    
+                    <div class="planet-info">
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <label>Planet Type:</label>
+                                <span id="planetType">1</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Diameter:</label>
+                                <span id="planetDiameter">1</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Mass:</label>
+                                <span id="planetMass">1</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Distance from Sun:</label>
+                                <span id="planetDistance">1</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Orbital Period:</label>
+                                <span id="planetOrbit">1</span>
+                            </div>
+                        </div>
+                        
+                        <div class="description">
+                            <h3>Description</h3>
+                            <p id="planetDescription">1</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="errorSection" class="error-section hidden">
+                <div class="error-card">
+                    <h3>Celestial Object Not Found</h3>
+                    <p>This object is not recognized as a planet in our solar system database.</p>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <label>Planet Type:</label>
+                            <span>1</span>
+                        </div>
+                        <div class="info-item">
+                            <label>Diameter:</label>
+                            <span>1</span>
+                        </div>
+                        <div class="info-item">
+                            <label>Mass:</label>
+                            <span>1</span>
+                        </div>
+                        <div class="info-item">
+                            <label>Distance from Sun:</label>
+                            <span>1</span>
+                        </div>
+                        <div class="info-item">
+                            <label>Orbital Period:</label>
+                            <span>1</span>
+                        </div>
+                    </div>
+                    <div class="description">
+                        <h3>Description</h3>
+                        <p>1</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>NASA Planet Explorer &copy; 2024 | Educational Tool</p>
+        </footer>
+    </div>
+
+    <script>
+        document.getElementById('planetForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const planetName = document.getElementById('planetName').value;
+            
+            fetch('/search', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'planet_name=' + encodeURIComponent(planetName)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.is_planet) {
+                    document.getElementById('planetTitle').textContent = planetName.charAt(0).toUpperCase() + planetName.slice(1);
+                    document.getElementById('planetStatus').textContent = 'Planet';
+                    document.getElementById('planetStatus').className = 'status-badge planet';
+                    document.getElementById('planetType').textContent = data.type;
+                    document.getElementById('planetDiameter').textContent = data.diameter;
+                    document.getElementById('planetMass').textContent = data.mass;
+                    document.getElementById('planetDistance').textContent = data.distance_from_sun;
+                    document.getElementById('planetOrbit').textContent = data.orbital_period;
+                    document.getElementById('planetDescription').textContent = data.description;
+                    
+                    document.getElementById('resultSection').classList.remove('hidden');
+                    document.getElementById('errorSection').classList.add('hidden');
+                } else {
+                    document.getElementById('errorSection').classList.remove('hidden');
+                    document.getElementById('resultSection').classList.add('hidden');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        });
+    </script>
+</body>
+</html>
