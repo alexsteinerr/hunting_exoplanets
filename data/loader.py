@@ -1,269 +1,203 @@
-import lightkurve as lk
-import numpy as np
-import pandas as pd
 import os
-import requests
-from config.settings import *
+import re
+import json
+import numpy as np
+from pathlib import Path
+from typing import Tuple, Optional
+import warnings
+from astropy.utils.exceptions import AstropyWarning
+from lightkurve.utils import LightkurveWarning
+import lightkurve as lk
+from astropy.time import Time
 
-CACHE_DIR = "lightcurve_cache"
-os.makedirs(CACHE_DIR, exist_ok=True)
+warnings.filterwarnings("ignore", category=LightkurveWarning)
+warnings.filterwarnings("ignore", category=AstropyWarning)
+warnings.filterwarnings("ignore", message="column .* has a unit but is kept as a Column")
+warnings.filterwarnings("ignore", message="The following columns will be excluded from stitching")
+os.environ.setdefault("PYTHONWARNINGS", "ignore")
+try:
+    lk.log.setLevel("WARNING")
+except Exception:
+    pass
 
-def _tap_get(query, timeout=15):
-    r = requests.get(
-        "https://exoplanetarchive.ipac.caltech.edu/TAP/sync",
-        params={"query": query, "format": "json"},
-        timeout=timeout,
-    )
-    if r.status_code == 200:
-        return r.json()
-    return None
+CACHE_DIR = os.environ.get("LC_CACHE_DIR") or os.path.join(os.path.dirname(__file__), "..", "cache")
+Path(CACHE_DIR).mkdir(parents=True, exist_ok=True)
 
-def _is_nonempty(rows):
-    return isinstance(rows, list) and len(rows) > 0
+def _norm_name(x: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", (x or "").strip())
 
-def _norm_tic(tic_id):
-    if not tic_id:
+def _npz_path(kind: str, key: str) -> str:
+    return os.path.join(CACHE_DIR, f"{kind}_{_norm_name(key)}.npz")
+
+def _is_tic(x: Optional[str]) -> Optional[int]:
+    if not x:
         return None
-    s = tic_id.upper().replace("TIC", "").replace(" ", "")
-    return int(s) if s.isdigit() else None
+    s = str(x).upper().replace("TIC", "")
+    digits = "".join(ch for ch in s if ch.isdigit())
+    return int(digits) if digits else None
 
-def _norm_toi_name(name):
-    t = name.upper().replace("TOI", "").replace("-", " ").strip()
-    return f"TOI {t}"
+def _is_kic(name: Optional[str]) -> Optional[int]:
+    if not name:
+        return None
+    m = re.search(r"\bKIC[-\s_]*([0-9]{4,})\b", str(name), flags=re.IGNORECASE)
+    return int(m.group(1)) if m else None
 
-def query_nasa_exoplanet_archive(target_name, tic_id=None):
-    tname = target_name.strip()
-    tic_num = _norm_tic(tic_id)
-    q_ps_exact = f"select pl_name,hostname from ps where lower(pl_name)=lower('{tname}')"
-    rows = _tap_get(q_ps_exact)
-    if _is_nonempty(rows):
-        return "Confirmed Exoplanet"
-    q_ps_like = f"select pl_name,hostname from ps where lower(pl_name) like lower('%{tname}%')"
-    rows = _tap_get(q_ps_like)
-    if _is_nonempty(rows):
-        return "Confirmed Exoplanet"
-    q_pc_exact = f"select pl_name,hostname from pscomppars where lower(pl_name)=lower('{tname}')"
-    rows = _tap_get(q_pc_exact)
-    if _is_nonempty(rows):
-        return "Confirmed Exoplanet"
-    q_pc_like = f"select pl_name,hostname from pscomppars where lower(pl_name) like lower('%{tname}%')"
-    rows = _tap_get(q_pc_like)
-    if _is_nonempty(rows):
-        return "Confirmed Exoplanet"
-    if "TOI" in tname.upper():
-        toi_name = _norm_toi_name(tname)
-        q_toi_by_name = (
-            "select toi,toi_name,tfopwg_disp,tid "
-            f"from toi where lower(toi_name)=lower('{toi_name}')"
-        )
-        rows = _tap_get(q_toi_by_name)
-        if _is_nonempty(rows):
-            disp = (rows[0].get("tfopwg_disp") or "").upper()
-            if disp in ("CP", "KP"):
-                return "Confirmed Exoplanet"
-            if disp == "PC":
-                return "Planet Candidate"
-            if disp == "FP":
-                return "False Positive"
-    if tic_num is not None:
-        q_toi_by_tid = f"select toi,toi_name,tfopwg_disp,tid from toi where tid={tic_num}"
-        rows = _tap_get(q_toi_by_tid)
-        if _is_nonempty(rows):
-            disp = (rows[0].get("tfopwg_disp") or "").upper()
-            if disp in ("CP", "KP"):
-                return "Confirmed Exoplanet"
-            if disp == "PC":
-                return "Planet Candidate"
-            if disp == "FP":
-                return "False Positive"
-    if any(x in tname.upper() for x in ("KEPLER", "KOI", "KIC")):
-        q_koi_like = (
-            "select kepid,kepoi_name,koi_disposition "
-            f"from q1_q17_dr25_koi where lower(kepoi_name) like lower('%{tname}%')"
-        )
-        rows = _tap_get(q_koi_like)
-        if _is_nonempty(rows):
-            disp = (rows[0].get("koi_disposition") or "").upper()
-            if "CONFIRMED" in disp:
-                return "Confirmed Exoplanet"
-            if "CANDIDATE" in disp:
-                return "Planet Candidate"
-            if "FALSE POSITIVE" in disp:
-                return "False Positive"
-    return None
-
-def query_exofop_tess(tic_id):
+def _as_float(a, default=np.nan):
     try:
-        if tic_id and tic_id.upper().startswith("TIC"):
-            tic_clean = tic_id.upper().replace("TIC", "").strip()
-            url = f"https://exofop.ipac.caltech.edu/tess/target.php?id={tic_clean}"
-            response = requests.get(url, timeout=10)
-            if response.status_code == 200:
-                content = response.text.upper()
-                if "FALSE POSITIVE" in content or " FP " in content or ">FP<" in content:
-                    return "False Positive"
-                if "CONFIRMED" in content:
-                    return "Confirmed Exoplanet"
-                if "CANDIDATE" in content or "PLANET CANDIDATE" in content or " PC " in content:
-                    return "Planet Candidate"
-        return None
+        return np.asarray(a, dtype=float)
     except Exception:
-        return None
+        arr = np.array(a)
+        out = np.empty(arr.shape, dtype=float)
+        out[:] = default
+        return out
 
-def query_kepler_fp_catalog(target_name):
-    try:
-        if any(x in target_name.upper() for x in ("KIC", "KEPLER", "KOI")):
-            return None
-        return None
-    except Exception:
-        return None
-
-def get_disposition_heuristic(target_name, tic_id=None):
-    false_positive_indicators = [
-        "FP", "FALSE POSITIVE", "EB", "ECLIPSING BINARY", "V", "VARIABLE STAR", "BINARY", "B", "VARIABLE"
-    ]
-    target_name_upper = target_name.upper()
-    for indicator in false_positive_indicators:
-        if indicator.upper() in target_name_upper:
-            return "False Positive (Heuristic)"
-    confirmed_prefixes = [
-        "TOI", "TIC", "KELT", "WASP", "HAT", "HD", "TRAPPIST", "KEPLER", "K2", "GJ", "LHS", "LTT", "L", "SCR"
-    ]
-    for prefix in confirmed_prefixes:
-        if prefix.upper() in target_name_upper:
-            return "Confirmed Exoplanet (Heuristic)"
-    if "TOI" in target_name_upper:
-        return "Planet Candidate (Heuristic)"
-    if tic_id and tic_id.upper().startswith("TIC"):
-        return "Planet Candidate (Heuristic)"
-    return "Unknown Disposition"
-
-def get_disposition_label(target_name, tic_id=None):
-    print(f"[QUERY] Checking NASA Exoplanet Archive for {target_name}...")
-    nasa_disp = query_nasa_exoplanet_archive(target_name, tic_id)
-    if nasa_disp:
-        print(f"[QUERY] NASA Archive disposition: {nasa_disp}")
-        return nasa_disp
-    if tic_id and tic_id.upper().startswith("TIC"):
-        print(f"[QUERY] Checking ExoFOP-TESS for {tic_id}...")
-        exofop_disp = query_exofop_tess(tic_id)
-        if exofop_disp:
-            print(f"[QUERY] ExoFOP-TESS disposition: {exofop_disp}")
-            return exofop_disp
-    if any(x in target_name.upper() for x in ("KIC", "KEPLER", "KOI")):
-        print(f"[QUERY] Checking Kepler False Positive Catalog for {target_name}...")
-        kepler_disp = query_kepler_fp_catalog(target_name)
-        if kepler_disp:
-            print(f"[QUERY] Kepler FP Catalog disposition: {kepler_disp}")
-            return kepler_disp
-    print(f"[QUERY] No database match found, using heuristic classification for {target_name}")
-    return get_disposition_heuristic(target_name, tic_id)
-
-def get_cache_filename(target_name, tic_id, period_days):
-    if tic_id and tic_id.upper().startswith("TIC"):
-        base_name = tic_id.replace(" ", "_")
+def _clean_lightcurve(lc: lk.LightCurve) -> lk.LightCurve:
+    t = getattr(lc, "time", None)
+    if hasattr(t, "value"):
+        time = _as_float(t.value)
+    elif isinstance(t, Time):
+        time = _as_float(t.to_value("jd"))
     else:
-        base_name = target_name.replace(" ", "_").replace("/", "_")
-    filename = f"{base_name}_P{period_days:.6f}.csv"
-    return os.path.join(CACHE_DIR, filename)
+        time = _as_float(t)
+    f = getattr(lc, "flux", None)
+    flux = _as_float(f.value if hasattr(f, "value") else f)
+    fe_raw = getattr(lc, "flux_err", None)
+    if fe_raw is None:
+        med = np.nanmedian(flux)
+        scatter = 1.4826 * np.nanmedian(np.abs(flux - med))
+        flux_err = np.full_like(flux, scatter if np.isfinite(scatter) and scatter > 0 else 1e-4)
+    else:
+        flux_err = _as_float(fe_raw.value if hasattr(fe_raw, "value") else fe_raw)
+    mask = np.isfinite(time) & np.isfinite(flux) & np.isfinite(flux_err)
+    time, flux, flux_err = time[mask], flux[mask], flux_err[mask]
+    return lk.LightCurve(time=time, flux=flux, flux_err=flux_err)
 
-def load_cached_light_curve(target_name, tic_id, period_days):
-    cache_file = get_cache_filename(target_name, tic_id, period_days)
-    if os.path.exists(cache_file):
+def _download_stitched_pdcsap(sr, mission_hint=None) -> Optional[lk.LightCurve]:
+    if len(sr) == 0:
+        return None
+    def _filter_by_author(sr, authors):
+        if "author" in sr.table.colnames:
+            mask = np.isin(np.array(sr.table["author"]).astype(str), authors)
+            return sr[mask] if mask.any() else sr
+        return sr
+    if mission_hint == "TESS":
+        sr = _filter_by_author(sr, ["SPOC", "QLP"])
+    elif mission_hint == "Kepler":
+        sr = _filter_by_author(sr, ["Kepler"])
+    elif mission_hint == "K2":
+        sr = _filter_by_author(sr, ["K2"])
+    lcs = []
+    for r in sr:
+        lc = None
         try:
-            print(f"[CACHE] Loading cached light curve from {cache_file}")
-            df = pd.read_csv(cache_file)
-            phase = df["phase"].values.astype(np.float32)
-            flux = df["flux"].values.astype(np.float32)
-            flux_err = df["flux_err"].values.astype(np.float32)
-            return phase, flux, flux_err, True
-        except Exception as e:
-            print(f"[CACHE] Error loading cached file {cache_file}: {e}")
-            return None, None, None, False
-    return None, None, None, False
+            lc = r.download(quality_bitmask="hard", flux_column="pdcsap_flux")
+        except Exception:
+            pass
+        if lc is None:
+            try:
+                lc = r.download(quality_bitmask="hard", flux_column="sap_flux")
+            except Exception:
+                lc = None
+        if lc is None:
+            continue
+        try:
+            lc = lc.normalize()
+        except Exception:
+            pass
+        lc = _clean_lightcurve(lc)
+        lcs.append(lc)
+    if not lcs:
+        return None
+    stitched = lk.LightCurveCollection(lcs).stitch()
+    stitched = _clean_lightcurve(stitched)
+    return stitched
 
-def save_light_curve_to_cache(target_name, tic_id, period_days, phase, flux, flux_err):
-    cache_file = get_cache_filename(target_name, tic_id, period_days)
-    try:
-        df = pd.DataFrame({"phase": phase, "flux": flux, "flux_err": flux_err})
-        df.to_csv(cache_file, index=False)
-        print(f"[CACHE] Saved light curve to {cache_file}")
-        return True
-    except Exception as e:
-        print(f"[CACHE] Error saving to cache {cache_file}: {e}")
-        return False
+def _search_and_download_lightcurve(name: Optional[str], tic_id: Optional[str]) -> lk.LightCurve:
+    tic = _is_tic(tic_id) or _is_tic(name)
+    if tic:
+        sr = lk.search_lightcurve(f"TIC {tic}", mission="TESS")
+        if len(sr) == 0:
+            sr = lk.search_lightcurve(f"TIC {tic}")
+        lc = _download_stitched_pdcsap(sr, mission_hint="TESS")
+        if lc is not None:
+            return lc
+    if name:
+        sr = lk.search_lightcurve(name, mission="TESS")
+        if len(sr) == 0:
+            sr = lk.search_lightcurve(name)
+        lc = _download_stitched_pdcsap(sr, mission_hint="TESS")
+        if lc is not None:
+            return lc
+    if name:
+        sr = lk.search_lightcurve(name, mission="Kepler")
+        if len(sr) == 0:
+            kic = _is_kic(name)
+            if kic:
+                sr = lk.search_lightcurve(f"KIC {kic}", mission="Kepler")
+        lc = _download_stitched_pdcsap(sr, mission_hint="Kepler")
+        if lc is not None:
+            return lc
+    if name:
+        sr = lk.search_lightcurve(name, mission="K2")
+        if len(sr) == 0:
+            kic = _is_kic(name)
+            if kic:
+                sr = lk.search_lightcurve(f"EPIC {kic}", mission="K2")
+        lc = _download_stitched_pdcsap(sr, mission_hint="K2")
+        if lc is not None:
+            return lc
+    raise ValueError("No light curve found in TESS, Kepler, or K2 for the given target.")
 
-def download_light_curve(target_name, tic_id=None):
-    search_str = tic_id if (tic_id and tic_id.upper().startswith("TIC")) else target_name
-    print(f"[INFO] Searching TESS light curves for {search_str} …")
-    search_result = lk.search_lightcurve(search_str, mission=MISSION)
-    if len(search_result) == 0:
-        raise RuntimeError(f"No TESS lightcurves found for {search_str}.")
-    print(f"[INFO] Downloading light curve for {search_str} …")
-    try:
-        lc = search_result.download_all().stitch() if USE_ALL_SECTORS else search_result.download()
-    except Exception as e:
-        print(f"[WARN] Stitching failed, downloading first sector: {e}")
-        lc = search_result[0].download()
-    if REMOVE_NANS:
-        lc = lc.remove_nans()
-    if NORMALIZE:
-        lc = lc.normalize()
-    return lc
+def _fold_lc_if_needed(lc: lk.LightCurve, period_days: Optional[float]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    f = np.asarray(lc.flux, dtype=float)
+    if hasattr(lc.time, "value"):
+        t = np.asarray(lc.time.value, dtype=float)
+    else:
+        t = _as_float(lc.time)
+    fe = getattr(lc, "flux_err", None)
+    if fe is None:
+        med = np.nanmedian(f)
+        scatter = 1.4826 * np.nanmedian(np.abs(f - med))
+        fe = np.full_like(f, scatter if np.isfinite(scatter) and scatter > 0 else 1e-4)
+    else:
+        fe = _as_float(fe)
+    if period_days and np.isfinite(period_days) and period_days > 0:
+        folded = lc.fold(period=period_days)
+        phase = np.asarray(folded.phase.value, dtype=float)
+        return phase, np.asarray(folded.flux, dtype=float), _as_float(getattr(folded, "flux_err", fe))
+    lc_flat = lc.flatten(window_length=301, polyorder=2, break_tolerance=5).remove_outliers(sigma=6)
+    tt = np.asarray(lc_flat.time.value, dtype=float)
+    yy = np.asarray(lc_flat.flux, dtype=float)
+    yyerr = getattr(lc_flat, "flux_err", None)
+    if yyerr is None:
+        med = np.nanmedian(yy)
+        scatter = 1.4826 * np.nanmedian(np.abs(yy - med))
+        yyerr = np.full_like(yy, scatter if np.isfinite(scatter) and scatter > 0 else 1e-4)
+    else:
+        yyerr = _as_float(yyerr)
+    period_grid = np.geomspace(0.3, 50.0, 5000)
+    duration_grid = np.linspace(0.5/24, 6.0/24, 16)
+    bls = lk.periodogram.BoxLeastSquaresPeriodogram(tt, yy, yyerr, minimum_period=period_grid.min(), maximum_period=period_grid.max())
+    res = bls.compute_stats()
+    p_est = float(res.period_at_max_power)
+    folded = lc.fold(period=p_est)
+    return np.asarray(folded.phase.value, dtype=float), np.asarray(folded.flux, dtype=float), _as_float(getattr(folded, "flux_err", fe))
 
-def fold_light_curve(lc, period_days):
-    folded_lc = lc.fold(period=period_days)
-    phase = folded_lc.phase.value.astype(np.float32)
-    flux = folded_lc.flux.value.astype(np.float32)
-    flux_err_attr = getattr(folded_lc, "flux_err", None)
-    flux_err = (
-        flux_err_attr.value.astype(np.float32)
-        if flux_err_attr is not None
-        else np.full_like(flux, np.nan, dtype=np.float32)
-    )
-    return phase, flux, flux_err
-
-def get_folded_light_curve(target_name, tic_id, period_days):
-    phase, flux, flux_err, from_cache = load_cached_light_curve(target_name, tic_id, period_days)
-    if from_cache:
-        return phase, flux, flux_err, True
-    print(f"[DOWNLOAD] No cache found for {target_name}, downloading...")
-    lc = download_light_curve(target_name, tic_id)
-    phase, flux, flux_err = fold_light_curve(lc, period_days)
-    save_light_curve_to_cache(target_name, tic_id, period_days, phase, flux, flux_err)
+def get_folded_light_curve(name: Optional[str], tic_id: Optional[str], period_days: Optional[float]):
+    key = json.dumps({"name": name or "", "tic": tic_id or "", "period": float(period_days) if period_days else None})
+    fp = _npz_path("folded", key)
+    if os.path.exists(fp):
+        try:
+            data = np.load(fp, allow_pickle=False)
+            return data["phase"], data["flux"], data["flux_err"], True
+        except Exception:
+            pass
+    lc = _search_and_download_lightcurve(name, tic_id)
+    phase, flux, flux_err = _fold_lc_if_needed(lc, period_days)
+    np.savez_compressed(fp, phase=phase, flux=flux, flux_err=flux_err)
     return phase, flux, flux_err, False
 
-def fetch_tess_targets(n=200):
-    adql = f"""
-    SELECT TOP {n}
-        pl_name,
-        hostname,
-        tic_id,
-        pl_orbper AS period_days,
-        pl_tranmid AS transit_epoch,
-        pl_trandur AS transit_duration,
-        pl_rade AS radius_earth,
-        pl_radj AS radius_jupiter,
-        pl_trandep AS transit_depth_ppm,
-        st_rad AS stellar_radius,
-        st_teff AS stellar_teff,
-        sy_dist AS distance_pc,
-        ra,
-        dec,
-        sy_tmag AS tess_mag
-    FROM pscomppars
-    WHERE default_flag=1
-      AND tran_flag=1
-      AND pl_orbper IS NOT NULL
-      AND tic_id IS NOT NULL
-      AND pl_trandep IS NOT NULL
-      AND disc_facility LIKE '%TESS%'
-    ORDER BY tic_id
-    """
-    r = requests.get(
-        "https://exoplanetarchive.ipac.caltech.edu/TAP/sync",
-        params={"query": adql, "format": "json"},
-        timeout=30,
-    )
-    r.raise_for_status()
-    return r.json()
+def get_disposition_label(name: str, tic_id: Optional[str]) -> str:
+    if name and "toi" in name.lower():
+        return "TESS_CANDIDATE"
+    return "CONFIRMED_OR_OTHER"

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_file
 from flask_cors import CORS
 import time
 import requests
@@ -9,20 +9,19 @@ import random
 import os
 import sys
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 try:
     from config.settings import *
-    from data.loader import CACHE_DIR, get_disposition_label, get_folded_light_curve
+    from data.loader import CACHE_DIR, get_disposition_label, get_folded_light_curve, get_full_datasets
     from utils.features import prepare_training_data, featurize
     from models.mlp import MLP
     from models.trainer import train_model
     from analysis.transit import analyze_transit_dip, fetch_stellar_radius
     from analysis.derivation import compare_theoretical_nn_area
     from analysis.boundaries import find_tight_transit_boundaries
-    from targets.target_list import get_exoplanet_targets
     ML_AVAILABLE = True
 except ImportError:
     ML_AVAILABLE = False
@@ -32,6 +31,8 @@ CORS(app)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logging.getLogger("lightkurve").setLevel(logging.ERROR)
+logging.getLogger("astroquery").setLevel(logging.ERROR)
 
 def _get_param(req, key: str, default: str = "") -> str:
     json_data = req.get_json(silent=True) or {}
@@ -119,25 +120,22 @@ def _parse_query_type(q: str) -> Dict[str, Any]:
     if not s:
         return {"kind": "empty"}
     s_up = s.upper()
-    
-    # Handle TIC IDs
     if s_up.startswith("TIC"):
-        digits = "".join(ch for ch in s_up if ch.isdigit())
+        digits = "".join(ch for ch in s if ch.isdigit())
         if digits:
             return {"kind": "tic", "value": int(digits)}
     if s.isdigit():
         return {"kind": "tic", "value": int(s)}
-    
-    # Handle TOI formats - FIXED
     if s_up.startswith("TOI-"):
-        core = s_up.replace("TOI-", "").strip()
-        # Handle formats like "TOI-1113.01"
+        core = s[len("TOI-"):].strip()
         return {"kind": "toi_full", "value": f"TOI-{core}"}
-    
-    # Handle formats like "1113.01" (from your dataset)
     if "." in s and s.replace(".", "").replace("-", "").isdigit():
         return {"kind": "toi_full", "value": f"TOI-{s}"}
-    
+    if s_up.startswith("KIC") or s_up.startswith("EPIC"):
+        digits = "".join(ch for ch in s if ch.isdigit())
+        if digits:
+            head = s.split()[0].upper()
+            return {"kind": "name", "value": f"{head} {digits}"}
     return {"kind": "name", "value": s}
 
 class NASAExoplanetAPI:
@@ -154,7 +152,7 @@ class NASAExoplanetAPI:
         adql = ' '.join(adql.split())
         params = {"query": adql, "format": "json", "MAXREC": str(maxrec)}
         last_err = None
-        for attempt in range(self.retries + 1):
+        for _ in range(self.retries + 1):
             try:
                 r = self.session.get(self.BASE_URL, params=params, timeout=timeout)
                 r.raise_for_status()
@@ -165,6 +163,7 @@ class NASAExoplanetAPI:
             except Exception as e:
                 last_err = e
                 time.sleep(self.pause_s)
+        logger.warning(f"ADQL failed: {last_err}")
         return pd.DataFrame()
 
     def _list_columns(self, table: str) -> set:
@@ -175,22 +174,9 @@ class NASAExoplanetAPI:
         planet_name_clean = (planet_name or "").replace("'", "''")
         adql = f"""
         SELECT TOP 10
-            pl_name,
-            hostname,
-            tic_id,
-            pl_orbper,
-            pl_tranmid,
-            pl_trandur,
-            pl_rade,
-            pl_radj,
-            pl_trandep,
-            st_rad,
-            st_teff,
-            st_mass,
-            sy_dist,
-            ra,
-            dec,
-            sy_tmag
+            pl_name, hostname, tic_id, pl_orbper, pl_tranmid, pl_trandur,
+            pl_rade, pl_radj, pl_trandep, st_rad, st_teff, st_mass, sy_dist,
+            ra, dec, sy_tmag
         FROM ps
         WHERE default_flag = 1
           AND (UPPER(pl_name) LIKE UPPER('%{planet_name_clean}%')
@@ -202,11 +188,7 @@ class NASAExoplanetAPI:
     def get_popular_exoplanets(self, limit: int = 50) -> pd.DataFrame:
         adql = f"""
         SELECT TOP {limit}
-            pl_name,
-            hostname,
-            tic_id,
-            pl_rade,
-            pl_orbper
+            pl_name, hostname, tic_id, pl_rade, pl_orbper
         FROM ps
         WHERE default_flag = 1
           AND pl_rade IS NOT NULL
@@ -218,8 +200,9 @@ class NASAExoplanetAPI:
     def get_ps_by_tic_id(self, tic_id: int) -> pd.DataFrame:
         adql = f"""
         SELECT TOP 5
-            pl_name, hostname, tic_id, pl_orbper, pl_tranmid, pl_trandur, pl_rade, pl_radj,
-            pl_trandep, st_rad, st_teff, st_mass, sy_dist, ra, dec, sy_tmag
+            pl_name, hostname, tic_id, pl_orbper, pl_tranmid, pl_trandur,
+            pl_rade, pl_radj, pl_trandep, st_rad, st_teff, st_mass, sy_dist,
+            ra, dec, sy_tmag
         FROM ps
         WHERE default_flag = 1 AND tic_id = {int(tic_id)}
         """
@@ -229,8 +212,9 @@ class NASAExoplanetAPI:
         planet_name_clean = (planet_name or "").replace("'", "''")
         adql = f"""
         SELECT TOP 5
-            pl_name, hostname, tic_id, pl_orbper, pl_tranmid, pl_trandur, pl_rade, pl_radj,
-            pl_trandep, st_rad, st_teff, st_mass, sy_dist, ra, dec, sy_tmag
+            pl_name, hostname, tic_id, pl_orbper, pl_tranmid, pl_trandur,
+            pl_rade, pl_radj, pl_trandep, st_rad, st_teff, st_mass, sy_dist,
+            ra, dec, sy_tmag
         FROM ps
         WHERE default_flag = 1
           AND (UPPER(pl_name) = UPPER('{planet_name_clean}')
@@ -251,7 +235,7 @@ class NASAExoplanetAPI:
         ]
         select_parts = [f"{c} AS {alias}" for c, alias in wanted if c in cols]
         where_clause = "tfopwg_disp = 'FP'" if "tfopwg_disp" in cols else "disposition = 'FALSE POSITIVE'"
-        order_col = "tic_id" if "tic_id" in cols else ("toi" if "toi" in cols else list(cols)[0])
+        order_col = "tic_id" if "tic_id" in cols else ("toi" if "toi" in cols else "full_toi_id")
         adql = f"""
         SELECT TOP {int(limit)}
             {', '.join(select_parts)}
@@ -262,20 +246,22 @@ class NASAExoplanetAPI:
         return self._run_adql(adql, maxrec=limit)
 
     def get_toi_by_full_id(self, full_toi_id: str) -> pd.DataFrame:
-        # Handle both "TOI-1113.01" and "1113.01" formats
-        toi_clean = full_toi_id.replace("TOI-", "").replace("'", "''")
-        
-        # Try exact match first
+        raw = (full_toi_id or "").strip()
+        base = raw.replace("TOI-", "").strip()
+        base_no_space = base.replace(" ", "")
         adql = f"""
-        SELECT TOP 2
+        SELECT TOP 5
             toi, full_toi_id, tic_id, tfopwg_disp, disposition,
             ra, dec, tmag, pl_tranmid, pl_orbper, pl_trandur, 
             pl_trandep, pl_rade, pl_insol, pl_eqt, st_dist, 
             st_teff, st_logg, st_rad
         FROM toi
-        WHERE full_toi_id = 'TOI-{toi_clean}' OR toi = '{toi_clean}'
+        WHERE UPPER(full_toi_id) = UPPER('TOI-{base}')
+           OR UPPER(full_toi_id) = UPPER('TOI-{base_no_space}')
+           OR UPPER(toi) = UPPER('{base}')
+           OR UPPER(toi) = UPPER('{base_no_space}')
         """
-        return self._run_adql(adql, maxrec=2)
+        return self._run_adql(adql, maxrec=5)
 
     def get_toi_by_short(self, toi_short: str) -> pd.DataFrame:
         cols = self._list_columns("toi")
@@ -350,9 +336,6 @@ class MLExoplanetAnalyzer:
             results = analyze_transit_dip(model, phase_data, flux_data, p_dense, y_nn_dense, target['period_days'])
             R_s_m, _ = fetch_stellar_radius(target['name'])
             R_p_m = R_s_m * results['rp_over_rs_est'] if results['transit_detected'] and not np.isnan(R_s_m) else float("nan")
-            theoretical_area_seconds = float('nan')
-            absolute_difference = float('nan')
-            relative_difference_percent = float('nan')
             agreement_score = float('nan')
             final_label = "NO_COMPARISON"
             if (results['transit_detected'] and not np.isnan(R_s_m) and not np.isnan(R_p_m)
@@ -364,9 +347,6 @@ class MLExoplanetAnalyzer:
                         target_name=target['name'], disposition=disposition
                     )
                     if tc:
-                        theoretical_area_seconds = tc['theoretical_area_seconds']
-                        absolute_difference = tc['absolute_difference']
-                        relative_difference_percent = tc['relative_difference_percent']
                         agreement_score = tc['agreement_score']
                         final_label = tc['final_label']
                 except Exception:
@@ -390,18 +370,18 @@ class MLExoplanetAnalyzer:
                 'model_used': 'pinn_transit',
             }
             return ml_results
-        except Exception as e:
-            return self._create_fallback_result(target, 'Unknown', f"ANALYSIS_ERROR: {str(e)}")
+        except Exception:
+            return self._create_fallback_result(target, 'Unknown', "ANALYSIS_ERROR")
 
     def _calculate_confidence(self, results: Dict, agreement_score: float) -> float:
-        base_confidence = 50.0
+        base = 50.0
         if results.get('transit_detected'):
-            base_confidence += 30.0
+            base += 30.0
         if agreement_score is not None and not np.isnan(agreement_score):
-            base_confidence += (float(agreement_score) / 100.0) * 20.0
+            base += (float(agreement_score) / 100.0) * 20.0
         if results.get('equivalent_depth', 0) and results['equivalent_depth'] > 0.01:
-            base_confidence += 10.0
-        return float(min(100.0, max(0.0, base_confidence)))
+            base += 10.0
+        return float(min(100.0, max(0.0, base)))
 
     def _simulate_analysis(self, target: Dict) -> Dict:
         name = (target.get('name') or '').lower()
@@ -485,61 +465,76 @@ def search_planet():
     try:
         q = _get_param(request, 'planet_name', '').strip() or _get_param(request, 'q', '').strip()
         if not q:
-            return jsonify(_json_safe({'error': 'Provide planet name, TOI (e.g., TOI-1000.01), or TIC ID'})), 400
-        
+            return jsonify(_json_safe({'error': 'Provide planet name, TOI (e.g., TOI-1000.01), TIC/KIC/EPIC ID'})), 400
         mode = _parse_query_type(q)
         source = None
         rows = []
-        
         logger.info(f"Searching for: {q} (type: {mode['kind']})")
-        
         if mode['kind'] == 'tic':
-            # Search PS table
             df_ps = nasa_api.get_ps_by_tic_id(mode['value'])
             if not df_ps.empty:
                 source = 'ps'
                 rows = df_ps.to_dict('records')
             else:
-                # Search TOI table
                 df_toi = nasa_api.get_toi_by_tic_id(mode['value'])
                 if not df_toi.empty:
                     source = 'toi'
                     rows = df_toi.to_dict('records')
-                    
         elif mode['kind'] == 'toi_full':
             df_toi = nasa_api.get_toi_by_full_id(mode['value'])
             if not df_toi.empty:
                 source = 'toi'
                 rows = df_toi.to_dict('records')
-                
         elif mode['kind'] == 'name':
-            # Search by name in PS table
             df_ps = nasa_api.search_planet_by_name(mode['value'])
             if not df_ps.empty:
                 source = 'ps'
                 rows = df_ps.to_dict('records')
             else:
-                # Fall back to TIC search if name looks like it contains numbers
                 digits = "".join(ch for ch in mode['value'] if ch.isdigit())
                 if digits:
                     df_toi = nasa_api.get_toi_by_tic_id(int(digits))
                     if not df_toi.empty:
                         source = 'toi'
                         rows = df_toi.to_dict('records')
-        
         if not rows:
-            logger.warning(f"No results found for: {q}")
-            return jsonify(_json_safe({
-                'is_planet': False, 
-                'query': q, 
-                'reason': 'NO_MATCH',
-                'search_type': mode['kind']
-            }))
-        
-        # For multiple results, return the first one but include info about alternatives
+            try:
+                ph, fx, fe, fc = get_folded_light_curve(q, _format_tic(q), None)
+                payload = {
+                    'source': 'lightkurve',
+                    'is_planet': False,
+                    'name': q,
+                    'hostname': 'Unknown',
+                    'tic_id': _format_tic(q) or '-',
+                    'period_days': '-',
+                    'radius_earth': '-',
+                    'radius_jupiter': '-',
+                    'transit_depth_ppm': '-',
+                    'stellar_radius': '-',
+                    'stellar_teff': '-',
+                    'distance_pc': '-',
+                    'tess_mag': '-',
+                    'description': f"{q}: light curve found via TESS/Kepler/K2.",
+                    'final_label': 'LIGHTCURVE_ONLY',
+                    'analysis_status': 'success',
+                    'light_curve': {
+                        'phase': _json_safe(ph),
+                        'flux': _json_safe(fx),
+                        'flux_err': _json_safe(fe),
+                        'from_cache': bool(fc),
+                        'source': 'TESS/Kepler/K2'
+                    }
+                }
+                return jsonify(_json_safe(payload))
+            except Exception:
+                return jsonify(_json_safe({
+                    'is_planet': False,
+                    'query': q,
+                    'reason': 'NO_MATCH',
+                    'search_type': mode['kind']
+                }))
         row = rows[0]
         has_alternatives = len(rows) > 1
-        
         if source == 'ps':
             name = row.get('pl_name') or 'Unknown'
             tic = _format_tic(row.get('tic_id'))
@@ -617,17 +612,35 @@ def search_planet():
         display['description'] = desc.strip() + "."
         if source == 'toi' and str(display.get('tfopwg_disp','')).upper() == 'FP':
             final = {**display, 'is_planet': False, 'analysis_status': 'skipped_fp', 'final_label': 'FALSE_POSITIVE'}
+            try:
+                ph, fx, fe, fc = get_folded_light_curve(target['name'], target.get('tic_id'), target.get('period_days'))
+                final['light_curve'] = {
+                    "phase": _json_safe(ph), "flux": _json_safe(fx), "flux_err": _json_safe(fe),
+                    "from_cache": bool(fc), "source": "TESS/Kepler/K2"
+                }
+            except Exception as e:
+                final['light_curve_error'] = str(e)
             return jsonify(_json_safe(final))
         ml_results = ml_analyzer.analyze_planet(target)
-        final_result = {**display, **ml_results}
-        
-        # Add information about alternatives
+        try:
+            ph, fx, fe, from_cache = get_folded_light_curve(target['name'], target.get('tic_id'), target.get('period_days'))
+            final_result = {
+                **display,
+                **ml_results,
+                "light_curve": {
+                    "phase": _json_safe(ph),
+                    "flux": _json_safe(fx),
+                    "flux_err": _json_safe(fe),
+                    "from_cache": bool(from_cache),
+                    "source": "TESS/Kepler/K2"
+                }
+            }
+        except Exception as e:
+            final_result = {**display, **ml_results, "light_curve_error": str(e)}
         if has_alternatives:
             final_result['alternative_matches'] = len(rows) - 1
             final_result['note'] = f"Found {len(rows)} matches, showing first"
-            
         return jsonify(_json_safe(final_result))
-        
     except Exception as e:
         logger.error(f"Search error for {q}: {str(e)}")
         return jsonify(_json_safe({'error': 'Internal server error', 'is_planet': False})), 500
@@ -648,10 +661,27 @@ def analyze_planet():
             'stellar_radius': _f(planet_data.get('stellar_radius')),
         }
         ml_results = ml_analyzer.analyze_planet(analysis_target)
+        lc_payload = {}
+        try:
+            ph, fx, fe, from_cache = get_folded_light_curve(
+                analysis_target['name'], analysis_target.get('tic_id'), analysis_target.get('period_days')
+            )
+            lc_payload = {
+                "light_curve": {
+                    "phase": _json_safe(ph),
+                    "flux": _json_safe(fx),
+                    "flux_err": _json_safe(fe),
+                    "from_cache": bool(from_cache),
+                    "source": "TESS/Kepler/K2"
+                }
+            }
+        except Exception as e:
+            lc_payload = {"light_curve_error": str(e)}
         return jsonify(_json_safe({
             'analysis_id': f"ml_{int(time.time())}",
             'analysis_timestamp': time.time(),
-            **ml_results
+            **ml_results,
+            **lc_payload
         }))
     except Exception as e:
         return jsonify(_json_safe({'error': f'Analysis failed: {str(e)}'})), 500
@@ -699,81 +729,60 @@ def get_popular():
     except Exception:
         return jsonify(_json_safe(["Kepler-186f", "TRAPPIST-1e", "Proxima Centauri b"]))
 
-@app.route('/health', methods=['GET'])
-def health_check():
-    return jsonify(_json_safe({
-        'status': 'healthy',
-        'timestamp': time.time(),
-        'ml_system_available': ml_analyzer.initialized,
-        'nasa_api_available': True,
-        'cache_size': len(popular_exoplanets_cache) if popular_exoplanets_cache else 0
-    }))
+@app.route('/dataset', methods=['GET'])
+def full_dataset():
+    q = (request.args.get('q') or request.args.get('target') or "").strip()
+    missions = (request.args.get('missions') or "TESS,Kepler,K2").split(",")
+    fluxes = (request.args.get('flux') or "pdcsap,sap").split(",")
+    mask = (request.args.get('mask') or "none").strip()
+    include_pdcsap = any(f.strip().lower()=="pdcsap" for f in fluxes)
+    include_sap = any(f.strip().lower()=="sap" for f in fluxes)
+    if not q:
+        return jsonify({"error":"provide ?q=<name|TIC|KIC|EPIC>"}), 400
+    try:
+        segs = get_full_datasets(name=q, tic_id=q, include=missions, include_pdcsap=include_pdcsap, include_sap=include_sap, quality=mask)
+        payload = []
+        for s in segs:
+            payload.append({
+                "mission": s["mission"],
+                "author": s["author"],
+                "flux_type": s["flux_type"],
+                "cadence": s["cadence"],
+                "sector": s["sector"],
+                "quarter": s["quarter"],
+                "campaign": s["campaign"],
+                "n_cadences": s["n_cadences"],
+                "cache_file": s["cache_file"]
+            })
+        return jsonify(payload)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-@app.route('/system-info', methods=['GET'])
-def system_info():
-    return jsonify(_json_safe({
-        'ml_system': {
-            'available': ml_analyzer.initialized,
-            'description': 'Neural Network Exoplanet Transit Analyzer',
-            'version': '2.1',
-            'features': ['light_curve_analysis', 'transit_detection', 'theoretical_validation'],
-            'status': 'operational' if ml_analyzer.initialized else 'simulation_mode'
-        },
-        'data_sources': {
-            'nasa_exoplanet_archive': True,
-            'light_curve_cache': True,
-            'stellar_parameters': True
-        }
-    }))
+@app.route('/download-segment', methods=['GET'])
+def download_segment():
+    fp = request.args.get('file')
+    if not fp or not os.path.isfile(fp):
+        return jsonify({"error":"file not found"}), 404
+    return send_file(fp, as_attachment=True)
 
 @app.route('/debug-search', methods=['GET'])
 def debug_search():
-    """Debug endpoint to test search functionality"""
     query = request.args.get('q', '')
     if not query:
         return jsonify({'error': 'Provide ?q= parameter'})
-    
     mode = _parse_query_type(query)
-    result = {
-        'query': query,
-        'parsed_type': mode,
-        'tests': []
-    }
-    
-    # Test TIC search
+    result = {'query': query, 'parsed_type': mode, 'tests': []}
     if mode['kind'] == 'tic':
         df = nasa_api.get_ps_by_tic_id(mode['value'])
-        result['tests'].append({
-            'type': 'ps_by_tic',
-            'found': not df.empty,
-            'results': len(df)
-        })
-        
+        result['tests'].append({'type': 'ps_by_tic','found': not df.empty,'results': len(df)})
         df_toi = nasa_api.get_toi_by_tic_id(mode['value'])
-        result['tests'].append({
-            'type': 'toi_by_tic', 
-            'found': not df_toi.empty,
-            'results': len(df_toi)
-        })
-    
-    # Test TOI search  
+        result['tests'].append({'type': 'toi_by_tic','found': not df_toi.empty,'results': len(df_toi)})
     elif mode['kind'] == 'toi_full':
         df = nasa_api.get_toi_by_full_id(mode['value'])
-        result['tests'].append({
-            'type': 'toi_by_full_id',
-            'found': not df.empty,
-            'results': len(df)
-        })
-    
-    # Test name search
+        result['tests'].append({'type': 'toi_by_full_id','found': not df.empty,'results': len(df)})
     elif mode['kind'] == 'name':
         df = nasa_api.search_planet_by_name(mode['value'])
-        result['tests'].append({
-            'type': 'ps_by_name',
-            'found': not df.empty, 
-            'results': len(df)
-        })
-    
+        result['tests'].append({'type': 'ps_by_name','found': not df.empty,'results': len(df)})
     return jsonify(_json_safe(result))
 
 @app.route('/')
