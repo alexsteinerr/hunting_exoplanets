@@ -1,4 +1,4 @@
-# 🌌 HUNTING-EXOPLANETS
+#  HUNTING EXOPLANETS
 
 **NASA Space Apps Hackathon 2025 Project**
 
@@ -6,7 +6,7 @@
 
 ---
 
-## 🚀 Overview
+## Overview
 
 **HUNTING-EXOPLANETS** is a modular system for analyzing light curves from missions such as **Kepler** and **TESS**.
 It performs:
@@ -20,7 +20,7 @@ All processing steps are implemented in clean, reusable modules that reflect ast
 
 ---
 
-## 🧠 Architecture
+## Folder Architecture
 
 ```
 HUNTING-EXOPLANETS/
@@ -64,7 +64,7 @@ HUNTING-EXOPLANETS/
 
 ---
 
-## 🪐 Key Features
+## Key Features
 
 * **Automated light-curve pipeline** — from NASA archive ingestion → detrending → transit detection.
 * **Machine Learning detection** — `models/mlp.py` provides a baseline neural classifier.
@@ -74,7 +74,7 @@ HUNTING-EXOPLANETS/
 
 ---
 
-## 🔧 Installation
+## Installation
 
 ```bash
 git clone https://github.com/alexsteinerr/hunting_exoplanets.git
@@ -97,9 +97,9 @@ lightkurve
 
 ---
 
-## 🧩 Usage
+## Usage
 
-### 1️⃣ Web Visualization Interface
+### Web Visualization Interface
 
 Run the Flask dashboard:
 
@@ -112,7 +112,7 @@ Upload a `.csv` or `.fits` light curve, visualize the flux, and detect possible 
 
 ---
 
-### 2️⃣ Training the Neural Model
+### Training the Neural Model
 
 Train your model on labeled data (planet vs non-planet):
 
@@ -127,7 +127,7 @@ python train.py
 
 ---
 
-### 3️⃣ Data Processing Pipeline Example
+### Data Processing Pipeline Example
 
 ```python
 from data.loader import load_lightcurve
@@ -144,7 +144,7 @@ plot_lightcurve(clean, dips=dip_info)
 
 ---
 
-## 📡 Data Sources
+## Data Sources
 
 This project supports **NASA Exoplanet Archive** and **MAST (TESS/Kepler)** datasets.
 
@@ -155,7 +155,7 @@ This project supports **NASA Exoplanet Archive** and **MAST (TESS/Kepler)** data
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 All settings (e.g., cache paths, model hyperparameters, debug flags) are defined in `config/settings.py`.
 
@@ -171,7 +171,7 @@ THRESHOLD = 0.05
 
 ---
 
-## 🛰️ For NASA Hackathon Judges
+## For NASA Hackathon Judges
 
 | Stage              | Description                                  | Script                |
 | ------------------ | -------------------------------------------- | --------------------- |
@@ -190,21 +190,13 @@ Typical run-through (≈5 min demo):
 
 ---
 
-## 🤝 Team
-
-**Developed by:**
-[@alexsteinerr](https://github.com/alexsteinerr)
-NASA Space Apps Hackathon 2025 Participant
-
----
-
-## 📜 License
+## License
 
 Released under the **MIT License**.
 
 ---
 
-## 🧭 Citation
+## Citation
 
 If you use this project or parts of it for research or hackathon extensions, please cite as:
 
