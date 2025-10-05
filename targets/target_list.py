@@ -6,7 +6,7 @@ def get_exoplanet_targets(limit: int = 200, use_api: bool = True, cache: bool = 
     """
     if use_api:
         try:
-            targets = create_target_list_from_api(use_tess=True, max_pages=None)
+            targets = create_target_list_from_api(use_tess=True)
             if cache:
                 from utils.api_client import save_targets_to_csv
                 save_targets_to_csv(targets)
@@ -41,10 +41,6 @@ def get_exoplanet_targets(limit: int = 200, use_api: bool = True, cache: bool = 
             'tic_id': 'TYC 7630-352-1',
             'period_days': 1.274925,
         },
-        # Add more fallback targets as needed...
     ]
     
     return FALLBACK_TARGETS[:limit]
-
-# Default export
-EXOPLANET_TARGETS = get_exoplanet_targets(limit=50, use_api=False)  # Small fallback

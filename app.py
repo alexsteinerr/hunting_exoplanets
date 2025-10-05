@@ -119,25 +119,25 @@ def _parse_query_type(q: str) -> Dict[str, Any]:
     if not s:
         return {"kind": "empty"}
     s_up = s.upper()
+    
+    # Handle TIC IDs
     if s_up.startswith("TIC"):
         digits = "".join(ch for ch in s_up if ch.isdigit())
         if digits:
             return {"kind": "tic", "value": int(digits)}
     if s.isdigit():
         return {"kind": "tic", "value": int(s)}
+    
+    # Handle TOI formats - FIXED
     if s_up.startswith("TOI-"):
-        core = s_up.replace("TOI-", "")
-        try:
-            float(core)
-            return {"kind": "toi_full", "value": f"TOI-{core}"}
-        except:
-            pass
-    try:
-        float(s)
-        if "." in s:
-            return {"kind": "toi_short", "value": s}
-    except:
-        pass
+        core = s_up.replace("TOI-", "").strip()
+        # Handle formats like "TOI-1113.01"
+        return {"kind": "toi_full", "value": f"TOI-{core}"}
+    
+    # Handle formats like "1113.01" (from your dataset)
+    if "." in s and s.replace(".", "").replace("-", "").isdigit():
+        return {"kind": "toi_full", "value": f"TOI-{s}"}
+    
     return {"kind": "name", "value": s}
 
 class NASAExoplanetAPI:
@@ -193,7 +193,8 @@ class NASAExoplanetAPI:
             sy_tmag
         FROM ps
         WHERE default_flag = 1
-          AND UPPER(pl_name) LIKE UPPER('%{planet_name_clean}%')
+          AND (UPPER(pl_name) LIKE UPPER('%{planet_name_clean}%')
+               OR UPPER(hostname) LIKE UPPER('%{planet_name_clean}%'))
         ORDER BY pl_name
         """
         return self._run_adql(adql, maxrec=10)
@@ -216,27 +217,27 @@ class NASAExoplanetAPI:
 
     def get_ps_by_tic_id(self, tic_id: int) -> pd.DataFrame:
         adql = f"""
-        SELECT TOP 1
+        SELECT TOP 5
             pl_name, hostname, tic_id, pl_orbper, pl_tranmid, pl_trandur, pl_rade, pl_radj,
             pl_trandep, st_rad, st_teff, st_mass, sy_dist, ra, dec, sy_tmag
         FROM ps
         WHERE default_flag = 1 AND tic_id = {int(tic_id)}
         """
-        return self._run_adql(adql, maxrec=1)
+        return self._run_adql(adql, maxrec=5)
 
     def get_ps_by_name(self, planet_name: str) -> pd.DataFrame:
         planet_name_clean = (planet_name or "").replace("'", "''")
         adql = f"""
-        SELECT TOP 1
+        SELECT TOP 5
             pl_name, hostname, tic_id, pl_orbper, pl_tranmid, pl_trandur, pl_rade, pl_radj,
             pl_trandep, st_rad, st_teff, st_mass, sy_dist, ra, dec, sy_tmag
         FROM ps
         WHERE default_flag = 1
-          AND (UPPER(pl_name) LIKE UPPER('%{planet_name_clean}%')
-               OR UPPER(hostname) LIKE UPPER('%{planet_name_clean}%'))
+          AND (UPPER(pl_name) = UPPER('{planet_name_clean}')
+               OR UPPER(hostname) = UPPER('{planet_name_clean}'))
         ORDER BY pl_name
         """
-        return self._run_adql(adql, maxrec=1)
+        return self._run_adql(adql, maxrec=5)
 
     def get_tess_false_positives(self, limit: int = 1000) -> pd.DataFrame:
         cols = self._list_columns("toi")
@@ -261,20 +262,20 @@ class NASAExoplanetAPI:
         return self._run_adql(adql, maxrec=limit)
 
     def get_toi_by_full_id(self, full_toi_id: str) -> pd.DataFrame:
-        full_toi_id = full_toi_id.replace("'", "''")
-        cols = self._list_columns("toi")
-        wanted = [
-            "toi","full_toi_id","tic_id","tfopwg_disp","disposition","ra","dec","tmag",
-            "pl_tranmid","pl_orbper","pl_trandur","pl_trandep","pl_rade","pl_insol","pl_eqt",
-            "st_dist","st_teff","st_logg","st_rad"
-        ]
-        select_cols = [c for c in wanted if c in cols]
+        # Handle both "TOI-1113.01" and "1113.01" formats
+        toi_clean = full_toi_id.replace("TOI-", "").replace("'", "''")
+        
+        # Try exact match first
         adql = f"""
-        SELECT TOP 1 {', '.join(select_cols)}
+        SELECT TOP 2
+            toi, full_toi_id, tic_id, tfopwg_disp, disposition,
+            ra, dec, tmag, pl_tranmid, pl_orbper, pl_trandur, 
+            pl_trandep, pl_rade, pl_insol, pl_eqt, st_dist, 
+            st_teff, st_logg, st_rad
         FROM toi
-        WHERE full_toi_id = '{full_toi_id}'
+        WHERE full_toi_id = 'TOI-{toi_clean}' OR toi = '{toi_clean}'
         """
-        return self._run_adql(adql, maxrec=1)
+        return self._run_adql(adql, maxrec=2)
 
     def get_toi_by_short(self, toi_short: str) -> pd.DataFrame:
         cols = self._list_columns("toi")
@@ -285,26 +286,24 @@ class NASAExoplanetAPI:
         ]
         select_cols = [c for c in wanted if c in cols]
         adql = f"""
-        SELECT TOP 1 {', '.join(select_cols)}
+        SELECT TOP 2 {', '.join(select_cols)}
         FROM toi
-        WHERE toi = {toi_short}
+        WHERE toi = '{toi_short}'
         """
-        return self._run_adql(adql, maxrec=1)
+        return self._run_adql(adql, maxrec=2)
 
     def get_toi_by_tic_id(self, tic_id: int) -> pd.DataFrame:
-        cols = self._list_columns("toi")
-        wanted = [
-            "toi","full_toi_id","tic_id","tfopwg_disp","disposition","ra","dec","tmag",
-            "pl_tranmid","pl_orbper","pl_trandur","pl_trandep","pl_rade","pl_insol","pl_eqt",
-            "st_dist","st_teff","st_logg","st_rad"
-        ]
-        select_cols = [c for c in wanted if c in cols]
         adql = f"""
-        SELECT TOP 1 {', '.join(select_cols)}
+        SELECT TOP 5
+            toi, full_toi_id, tic_id, tfopwg_disp, disposition,
+            ra, dec, tmag, pl_tranmid, pl_orbper, pl_trandur, 
+            pl_trandep, pl_rade, pl_insol, pl_eqt, st_dist, 
+            st_teff, st_logg, st_rad
         FROM toi
         WHERE tic_id = {int(tic_id)}
+        ORDER BY toi
         """
-        return self._run_adql(adql, maxrec=1)
+        return self._run_adql(adql, maxrec=5)
 
 class MLExoplanetAnalyzer:
     def __init__(self):
@@ -487,43 +486,60 @@ def search_planet():
         q = _get_param(request, 'planet_name', '').strip() or _get_param(request, 'q', '').strip()
         if not q:
             return jsonify(_json_safe({'error': 'Provide planet name, TOI (e.g., TOI-1000.01), or TIC ID'})), 400
+        
         mode = _parse_query_type(q)
         source = None
-        row = None
+        rows = []
+        
+        logger.info(f"Searching for: {q} (type: {mode['kind']})")
+        
         if mode['kind'] == 'tic':
+            # Search PS table
             df_ps = nasa_api.get_ps_by_tic_id(mode['value'])
             if not df_ps.empty:
                 source = 'ps'
-                row = df_ps.iloc[0]
+                rows = df_ps.to_dict('records')
             else:
+                # Search TOI table
                 df_toi = nasa_api.get_toi_by_tic_id(mode['value'])
                 if not df_toi.empty:
                     source = 'toi'
-                    row = df_toi.iloc[0]
+                    rows = df_toi.to_dict('records')
+                    
         elif mode['kind'] == 'toi_full':
             df_toi = nasa_api.get_toi_by_full_id(mode['value'])
             if not df_toi.empty:
                 source = 'toi'
-                row = df_toi.iloc[0]
-        elif mode['kind'] == 'toi_short':
-            df_toi = nasa_api.get_toi_by_short(mode['value'])
-            if not df_toi.empty:
-                source = 'toi'
-                row = df_toi.iloc[0]
+                rows = df_toi.to_dict('records')
+                
         elif mode['kind'] == 'name':
-            df_ps = nasa_api.get_ps_by_name(mode['value'])
+            # Search by name in PS table
+            df_ps = nasa_api.search_planet_by_name(mode['value'])
             if not df_ps.empty:
                 source = 'ps'
-                row = df_ps.iloc[0]
+                rows = df_ps.to_dict('records')
             else:
+                # Fall back to TIC search if name looks like it contains numbers
                 digits = "".join(ch for ch in mode['value'] if ch.isdigit())
                 if digits:
                     df_toi = nasa_api.get_toi_by_tic_id(int(digits))
                     if not df_toi.empty:
                         source = 'toi'
-                        row = df_toi.iloc[0]
-        if row is None:
-            return jsonify(_json_safe({'is_planet': False, 'query': q, 'reason': 'NO_MATCH'}))
+                        rows = df_toi.to_dict('records')
+        
+        if not rows:
+            logger.warning(f"No results found for: {q}")
+            return jsonify(_json_safe({
+                'is_planet': False, 
+                'query': q, 
+                'reason': 'NO_MATCH',
+                'search_type': mode['kind']
+            }))
+        
+        # For multiple results, return the first one but include info about alternatives
+        row = rows[0]
+        has_alternatives = len(rows) > 1
+        
         if source == 'ps':
             name = row.get('pl_name') or 'Unknown'
             tic = _format_tic(row.get('tic_id'))
@@ -604,8 +620,16 @@ def search_planet():
             return jsonify(_json_safe(final))
         ml_results = ml_analyzer.analyze_planet(target)
         final_result = {**display, **ml_results}
+        
+        # Add information about alternatives
+        if has_alternatives:
+            final_result['alternative_matches'] = len(rows) - 1
+            final_result['note'] = f"Found {len(rows)} matches, showing first"
+            
         return jsonify(_json_safe(final_result))
+        
     except Exception as e:
+        logger.error(f"Search error for {q}: {str(e)}")
         return jsonify(_json_safe({'error': 'Internal server error', 'is_planet': False})), 500
 
 @app.route('/analyze', methods=['POST'])
@@ -701,6 +725,56 @@ def system_info():
             'stellar_parameters': True
         }
     }))
+
+@app.route('/debug-search', methods=['GET'])
+def debug_search():
+    """Debug endpoint to test search functionality"""
+    query = request.args.get('q', '')
+    if not query:
+        return jsonify({'error': 'Provide ?q= parameter'})
+    
+    mode = _parse_query_type(query)
+    result = {
+        'query': query,
+        'parsed_type': mode,
+        'tests': []
+    }
+    
+    # Test TIC search
+    if mode['kind'] == 'tic':
+        df = nasa_api.get_ps_by_tic_id(mode['value'])
+        result['tests'].append({
+            'type': 'ps_by_tic',
+            'found': not df.empty,
+            'results': len(df)
+        })
+        
+        df_toi = nasa_api.get_toi_by_tic_id(mode['value'])
+        result['tests'].append({
+            'type': 'toi_by_tic', 
+            'found': not df_toi.empty,
+            'results': len(df_toi)
+        })
+    
+    # Test TOI search  
+    elif mode['kind'] == 'toi_full':
+        df = nasa_api.get_toi_by_full_id(mode['value'])
+        result['tests'].append({
+            'type': 'toi_by_full_id',
+            'found': not df.empty,
+            'results': len(df)
+        })
+    
+    # Test name search
+    elif mode['kind'] == 'name':
+        df = nasa_api.search_planet_by_name(mode['value'])
+        result['tests'].append({
+            'type': 'ps_by_name',
+            'found': not df.empty, 
+            'results': len(df)
+        })
+    
+    return jsonify(_json_safe(result))
 
 @app.route('/')
 def index():

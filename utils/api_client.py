@@ -40,61 +40,21 @@ class NASAExoplanetAPI:
             sy_tmag AS tess_mag
         """
 
-    @staticmethod
-    def _keyset_clause(last_key: Optional[Tuple[int, str]]) -> str:
-        if last_key is None:
-            return ""
-        last_tic, last_name = last_key
-        last_name_esc = last_name.replace("'", "''")
-        return f"""
-            AND (
-                (tic_id > {last_tic})
-                OR (tic_id = {last_tic} AND pl_name > '{last_name_esc}')
-            )
+    def _fetch_all_at_once(self, base_where: str) -> pd.DataFrame:
+        """Fetch all data in a single query without pagination"""
+        adql = f"""
+        SELECT
+            {self._select_block()}
+        FROM ps
+        WHERE {base_where}
+        ORDER BY tic_id, pl_name
         """
+        print("[API] Fetching all data in a single query...")
+        df = self._run_adql(adql)
+        print(f"[API] Fetched {len(df)} total rows")
+        return df
 
-    def _paged_fetch(self, base_where: str, page_size: int = 50000, max_pages: Optional[int] = None) -> pd.DataFrame:
-        all_chunks = []
-        last_key: Optional[Tuple[int, str]] = None
-        page = 0
-        total = 0
-
-        while True:
-            page += 1
-            if max_pages is not None and page > max_pages:
-                break
-            keyset = self._keyset_clause(last_key)
-            adql = f"""
-            SELECT TOP {page_size}
-                {self._select_block()}
-            FROM ps
-            WHERE {base_where}
-            {keyset}
-            ORDER BY tic_id, pl_name
-            """
-            df = self._run_adql(adql)
-            n = len(df)
-            if n == 0:
-                print(f"[API] No more rows. Done. Total rows: {total}")
-                break
-            all_chunks.append(df)
-            total += n
-            print(f"[API] Page {page}: fetched {n} rows (cumulative {total})")
-            last_row = df.iloc[-1]
-            try:
-                last_tic_val = int(str(last_row["tic_id"]).replace("TIC", "").strip()) if str(last_row["tic_id"]).upper().startswith("TIC") else int(last_row["tic_id"])
-            except Exception:
-                last_tic_val = int(float(last_row["tic_id"]))
-            last_name_val = str(last_row["pl_name"])
-            last_key = (last_tic_val, last_name_val)
-            time.sleep(self.pause_s)
-            if n < page_size:
-                print(f"[API] Final partial page reached. Total rows: {total}")
-                break
-
-        return pd.concat(all_chunks, ignore_index=True) if all_chunks else pd.DataFrame()
-
-    def get_transiting_exoplanets_paged(self, min_period: float = 0.5, max_period: float = 50.0, page_size: int = 50000, max_pages: Optional[int] = None) -> pd.DataFrame:
+    def get_transiting_exoplanets_all(self, min_period: float = 0.5, max_period: float = 50.0) -> pd.DataFrame:
         base_where = f"""
             default_flag=1
             AND tran_flag=1
@@ -102,10 +62,10 @@ class NASAExoplanetAPI:
             AND pl_trandep IS NOT NULL
             AND tic_id IS NOT NULL
         """
-        print("[API] Fetching transiting exoplanets (paged)...")
-        return self._paged_fetch(base_where=base_where, page_size=page_size, max_pages=max_pages)
+        print("[API] Fetching all transiting exoplanets in one query...")
+        return self._fetch_all_at_once(base_where=base_where)
 
-    def get_tess_targets_paged(self, page_size: int = 50000, max_pages: Optional[int] = None) -> pd.DataFrame:
+    def get_tess_targets_all(self) -> pd.DataFrame:
         base_where = """
             default_flag=1
             AND tran_flag=1
@@ -114,8 +74,8 @@ class NASAExoplanetAPI:
             AND tic_id IS NOT NULL
             AND disc_facility LIKE '%TESS%'
         """
-        print("[API] Fetching TESS targets (paged)...")
-        return self._paged_fetch(base_where=base_where, page_size=page_size, max_pages=max_pages)
+        print("[API] Fetching all TESS targets in one query...")
+        return self._fetch_all_at_once(base_where=base_where)
 
 
 def _format_tic(val):
@@ -135,10 +95,10 @@ def _f(val):
     except Exception:
         return None
 
-def create_target_list_from_api(use_tess: bool = True, page_size: int = 50000, max_pages: Optional[int] = None) -> List[Dict]:
+def create_target_list_from_api(use_tess: bool = True) -> List[Dict]:
     api = NASAExoplanetAPI()
     try:
-        df = api.get_tess_targets_paged(page_size=page_size, max_pages=max_pages) if use_tess else api.get_transiting_exoplanets_paged(page_size=page_size, max_pages=max_pages)
+        df = api.get_tess_targets_all() if use_tess else api.get_transiting_exoplanets_all()
         targets: List[Dict] = []
         for _, row in df.iterrows():
             tic_str = _format_tic(row.get("tic_id"))
@@ -165,6 +125,7 @@ def create_target_list_from_api(use_tess: bool = True, page_size: int = 50000, m
         return targets
     except Exception as e:
         print(f"[ERROR] Failed to fetch from API: {e}")
+        # Fallback to local target list if API fails
         from targets.target_list import EXOPLANET_TARGETS
         return EXOPLANET_TARGETS
 
