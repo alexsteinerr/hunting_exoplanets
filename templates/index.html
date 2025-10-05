@@ -201,6 +201,42 @@
         color: var(--accent);
         border: 1px solid rgba(226, 75, 58, 0.4);
       }
+
+      .status-badge.confirmed {
+        background: rgba(76, 175, 80, 0.2);
+        color: #4caf50;
+        border: 1px solid rgba(76, 175, 80, 0.4);
+      }
+
+      .status-badge.highly-likely {
+        background: rgba(33, 150, 243, 0.2);
+        color: #2196f3;
+        border: 1px solid rgba(33, 150, 243, 0.4);
+      }
+
+      .status-badge.likely {
+        background: rgba(255, 193, 7, 0.2);
+        color: #ffc107;
+        border: 1px solid rgba(255, 193, 7, 0.4);
+      }
+
+      .status-badge.candidate {
+        background: rgba(255, 152, 0, 0.2);
+        color: #ff9800;
+        border: 1px solid rgba(255, 152, 0, 0.4);
+      }
+
+      .status-badge.uncertain {
+        background: rgba(158, 158, 158, 0.2);
+        color: #9e9e9e;
+        border: 1px solid rgba(158, 158, 158, 0.4);
+      }
+
+      .status-badge.false-positive {
+        background: rgba(244, 67, 54, 0.2);
+        color: #f44336;
+        border: 1px solid rgba(244, 67, 54, 0.4);
+      }
       
       .info-grid {
         display: grid;
@@ -303,6 +339,37 @@
       
       @keyframes spin {
         to { transform: rotate(360deg); }
+      }
+
+      .confidence-visualization {
+        margin-top: 1rem;
+      }
+      
+      .confidence-bar {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        overflow: hidden;
+        height: 24px;
+        width: 100%;
+        position: relative;
+      }
+      
+      .confidence-fill {
+        background: linear-gradient(90deg, rgba(226, 75, 58, 1) 0%, rgba(255, 107, 87, 1) 100%);
+        height: 100%;
+        transition: width 0.4s ease;
+        width: 0%;
+      }
+      
+      .confidence-text {
+        position: absolute;
+        top: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        font-weight: 700;
+        color: #fff;
+        line-height: 24px;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.5);
       }
     </style>
 </head>
@@ -418,6 +485,49 @@
     </div>
   </div>
 
+  <!-- ML Analysis Results Section -->
+  <div id="mlAnalysisSection" class="hidden">
+    <div class="container">
+      <div class="planet-card">
+        <div class="planet-header">
+          <h2>🤖 ML Analysis Results</h2>
+          <span id="mlStatus" class="status-badge">ANALYZING</span>
+        </div>
+        <div class="planet-info">
+          <div class="info-grid">
+            <div class="info-item">
+              <label>Transit Detected:</label>
+              <span id="mlTransitDetected">-</span>
+            </div>
+            <div class="info-item">
+              <label>Confidence Score:</label>
+              <span id="mlConfidence">-</span>
+            </div>
+            <div class="info-item">
+              <label>Agreement Percentage:</label>
+              <span id="mlAgreement">-</span>
+            </div>
+            <div class="info-item">
+              <label>Model Used:</label>
+              <span id="mlModel">-</span>
+            </div>
+          </div>
+          <div class="description">
+            <h3>Classification</h3>
+            <p id="mlClassification">-</p>
+          </div>
+          <div class="confidence-visualization">
+            <h3>Detection Confidence</h3>
+            <div class="confidence-bar">
+              <div class="confidence-fill" id="confidenceFill"></div>
+              <span class="confidence-text" id="confidenceText">0%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Three link rows -->
   <div class="container rows">
     <div class="rowgrid">
@@ -468,6 +578,7 @@
   // Fetch exoplanet data from your backend
   async function fetchExoplanetData(planetName) {
     try {
+      console.log('Searching for planet:', planetName);
       const response = await fetch('/search', {
         method: 'POST',
         headers: {
@@ -477,14 +588,71 @@
       });
       
       if (!response.ok) {
-        throw new Error('Network response was not ok');
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
       
-      return await response.json();
+      const data = await response.json();
+      console.log('API Response:', data);
+      return data;
     } catch (error) {
       console.error('Error fetching exoplanet data:', error);
-      return null;
+      return { error: error.message, is_planet: false };
     }
+  }
+
+  // Update ML analysis section with data
+  function updateMLAnalysis(data) {
+    console.log('Updating ML analysis with:', data);
+    
+    // Check if ML data exists
+    if (data.transit_detected !== undefined || data.final_label !== undefined) {
+      // Update ML analysis fields
+      document.getElementById('mlTransitDetected').textContent = 
+        data.transit_detected !== undefined ? (data.transit_detected ? 'Yes' : 'No') : '-';
+      
+      document.getElementById('mlConfidence').textContent = 
+        data.transit_confidence !== undefined ? `${Number(data.transit_confidence).toFixed(1)}%` : '-';
+      
+      document.getElementById('mlAgreement').textContent = 
+        data.agreement_score !== undefined ? `${Number(data.agreement_score).toFixed(1)}%` : '-';
+      
+      document.getElementById('mlModel').textContent = 
+        data.model_used || data.analysis_status || '-';
+      
+      document.getElementById('mlClassification').textContent = 
+        data.final_label || 'ANALYSIS_PENDING';
+      
+      // Update confidence visualization
+      const confidencePercent = Number(data.transit_confidence).toFixed(1) || 0;
+      document.getElementById('confidenceFill').style.width = `${confidencePercent}%`;
+      document.getElementById('confidenceText').textContent = `${confidencePercent}%`;
+      
+      // Update ML status badge based on classification
+      const mlStatus = document.getElementById('mlStatus');
+      const finalLabel = data.final_label || 'ANALYZING';
+      mlStatus.textContent = finalLabel.replace(/_/g, ' ');
+      
+      // Set appropriate class based on classification
+      const classification = (finalLabel || '').toLowerCase();
+      mlStatus.className = 'status-badge ' + getStatusClass(classification);
+      
+      // Show ML analysis section
+      document.getElementById('mlAnalysisSection').classList.remove('hidden');
+    } else {
+      // Hide ML analysis section if no ML data
+      document.getElementById('mlAnalysisSection').classList.add('hidden');
+    }
+  }
+
+  // Helper function to get CSS class for status badge
+  function getStatusClass(classification) {
+    if (classification.includes('confirmed')) return 'confirmed';
+    if (classification.includes('highly_likely') || classification.includes('highly likely')) return 'highly-likely';
+    if (classification.includes('likely')) return 'likely';
+    if (classification.includes('candidate')) return 'candidate';
+    if (classification.includes('uncertain')) return 'uncertain';
+    if (classification.includes('false')) return 'false-positive';
+    return '';
   }
 
   // Fetch exoplanet suggestions while typing
@@ -495,7 +663,6 @@
     }
     
     try {
-      // This would be a separate endpoint in your backend that returns suggestions
       const response = await fetch('/suggestions?q=' + encodeURIComponent(query));
       
       if (!response.ok) {
@@ -506,6 +673,8 @@
       displaySuggestions(suggestions);
     } catch (error) {
       console.error('Error fetching suggestions:', error);
+      // Fallback to mock suggestions if API fails
+      displayMockSuggestions(query);
     }
   }
 
@@ -532,6 +701,21 @@
     }
   }
 
+  // Mock suggestions fallback
+  function displayMockSuggestions(query) {
+    const mockExoplanets = [
+      "Kepler-186f", "Kepler-452b", "TRAPPIST-1e", "Proxima Centauri b", 
+      "GJ 667 Cc", "HD 209458 b", "WASP-12b", "GJ 1214b", "HD 189733 b",
+      "Kepler-22b", "Kepler-62f", "Kepler-438b", "LHS 1140 b", "K2-18b"
+    ];
+    
+    const filtered = mockExoplanets.filter(name => 
+      name.toLowerCase().includes(query.toLowerCase())
+    );
+    
+    displaySuggestions(filtered);
+  }
+
   // Initialize the application
   document.addEventListener('DOMContentLoaded', function() {
     const planetForm = document.getElementById('planetForm');
@@ -551,41 +735,56 @@
       submitButton.innerHTML = '<span class="loading"></span>';
       submitButton.disabled = true;
       
+      // Hide previous results
+      document.getElementById('resultSection').classList.add('hidden');
+      document.getElementById('errorSection').classList.add('hidden');
+      document.getElementById('mlAnalysisSection').classList.add('hidden');
+      
       const data = await fetchExoplanetData(planetName);
       
       // Restore button state
       submitButton.textContent = originalText;
       submitButton.disabled = false;
       
-      if (data && data.is_planet) {
+      if (data.error) {
+        // Show error
+        document.getElementById('errorSection').classList.remove('hidden');
+        console.error('API Error:', data.error);
+      } else if (data.is_planet) {
+        // Update planet information
         document.getElementById('planetTitle').textContent = data.name || planetName;
         document.getElementById('planetStatus').textContent = 'Exoplanet';
         document.getElementById('planetStatus').className = 'status-badge planet';
         document.getElementById('planetHost').textContent = data.hostname || '-';
         document.getElementById('planetTicId').textContent = data.tic_id || '-';
-        document.getElementById('planetOrbit').textContent = data.period_days ? `${data.period_days} days` : '-';
-        document.getElementById('planetRadiusEarth').textContent = data.radius_earth ? `${data.radius_earth} Earth radii` : '-';
-        document.getElementById('planetRadiusJupiter').textContent = data.radius_jupiter ? `${data.radius_jupiter} Jupiter radii` : '-';
-        document.getElementById('planetTransitDepth').textContent = data.transit_depth_ppm ? `${data.transit_depth_ppm} ppm` : '-';
-        document.getElementById('planetStellarRadius').textContent = data.stellar_radius ? `${data.stellar_radius} Solar radii` : '-';
-        document.getElementById('planetStellarTemp').textContent = data.stellar_teff ? `${data.stellar_teff} K` : '-';
-        document.getElementById('planetDistance').textContent = data.distance_pc ? `${data.distance_pc} pc` : '-';
+        document.getElementById('planetOrbit').textContent = data.period_days || '-';
+        document.getElementById('planetRadiusEarth').textContent = data.radius_earth || '-';
+        document.getElementById('planetRadiusJupiter').textContent = data.radius_jupiter || '-';
+        document.getElementById('planetTransitDepth').textContent = data.transit_depth_ppm || '-';
+        document.getElementById('planetStellarRadius').textContent = data.stellar_radius || '-';
+        document.getElementById('planetStellarTemp').textContent = data.stellar_teff || '-';
+        document.getElementById('planetDistance').textContent = data.distance_pc || '-';
         
-        // Generate a description based on available data
-        let description = `${data.name || planetName} is an exoplanet`;
-        if (data.hostname) description += ` orbiting the star ${data.hostname}`;
-        if (data.period_days) description += ` with an orbital period of ${data.period_days} days`;
-        if (data.radius_earth) description += `. It has a radius of ${data.radius_earth} Earth radii`;
-        if (data.distance_pc) description += ` and is located approximately ${data.distance_pc} parsecs from Earth`;
-        description += '.';
-        
-        document.getElementById('planetDescription').textContent = description;
+        // Use provided description or generate one
+        if (data.description) {
+          document.getElementById('planetDescription').textContent = data.description;
+        } else {
+          let description = `${data.name || planetName} is an exoplanet`;
+          if (data.hostname && data.hostname !== 'Unknown') description += ` orbiting the star ${data.hostname}`;
+          if (data.period_days && data.period_days !== '-') description += ` with an orbital period of ${data.period_days}`;
+          if (data.radius_earth && data.radius_earth !== '-') description += `. It has a radius of ${data.radius_earth}`;
+          if (data.distance_pc && data.distance_pc !== '-') description += ` and is located approximately ${data.distance_pc} from Earth`;
+          description += '.';
+          document.getElementById('planetDescription').textContent = description;
+        }
         
         document.getElementById('resultSection').classList.remove('hidden');
-        document.getElementById('errorSection').classList.add('hidden');
+        
+        // Update ML analysis section
+        updateMLAnalysis(data);
       } else {
+        // Planet not found
         document.getElementById('errorSection').classList.remove('hidden');
-        document.getElementById('resultSection').classList.add('hidden');
       }
       
       // Hide suggestions after search
@@ -605,46 +804,12 @@
       }
     });
     
-    // For demo purposes - in a real implementation, this would come from your backend
-    // This is a mock function to simulate suggestion data
-    window.fetchSuggestions = async function(query) {
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 200));
-      
-      // Mock data - in a real implementation, this would come from your backend
-      const mockExoplanets = [
-        "Kepler-186f", "Kepler-452b", "TRAPPIST-1e", "Proxima Centauri b", 
-        "GJ 667 Cc", "HD 209458 b", "WASP-12b", "GJ 1214b", "HD 189733 b",
-        "Kepler-22b", "Kepler-62f", "Kepler-438b", "LHS 1140 b", "K2-18b"
-      ];
-      
-      return mockExoplanets.filter(name => 
-        name.toLowerCase().includes(query.toLowerCase())
-      );
-    };
-    
-    // Mock displaySuggestions for demo
-    window.displaySuggestions = function(suggestions) {
-      const suggestionsContainer = document.getElementById('suggestions');
-      suggestionsContainer.innerHTML = '';
-      
-      if (suggestions && suggestions.length > 0) {
-        suggestions.forEach(suggestion => {
-          const item = document.createElement('div');
-          item.className = 'suggestion-item';
-          item.textContent = suggestion;
-          item.addEventListener('click', () => {
-            document.getElementById('planetName').value = suggestion;
-            suggestionsContainer.classList.remove('active');
-            document.getElementById('planetForm').dispatchEvent(new Event('submit'));
-          });
-          suggestionsContainer.appendChild(item);
-        });
-        suggestionsContainer.classList.add('active');
-      } else {
-        suggestionsContainer.classList.remove('active');
+    // Handle Enter key in search input
+    planetInput.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        planetForm.dispatchEvent(new Event('submit'));
       }
-    };
+    });
   });
 </script>
 
