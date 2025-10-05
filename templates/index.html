@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NASA Exoplanet Hunting</title>
+    <title>AstroTuff Dynamics Exoplanet Hunting</title>
     <meta name="color-scheme" content="dark light">
     <style>
       :root{
@@ -14,7 +14,7 @@
         --panel:#0b0b0b;            /* panels */
         --line:#2b2b2b;             /* hairline */
         --banner:#1c4fa3;           /* top blue banner */
-        --accent:#e24b3a;           /* NASA red button */
+        --accent:#e24b3a;           /* AstroTuff Dynamics red button */
         --accent-2:#ff6b57;
         --focus:#ffd54a;
 
@@ -297,13 +297,11 @@
         aspect-ratio: 1 / 1; 
         border-radius:999px; 
         margin-inline:auto; 
-        width:min(420px, 70%);
+        width:min(500px, 80%);
         background:
-          radial-gradient(circle at 30% 40%, rgba(255,255,255,.18), transparent 45%),
-          url('https://cdn.freebiesupply.com/logos/large/2x/nasa-1-logo-png-transparent.png') center/cover no-repeat;
+          url('static/logo.png') center/cover no-repeat;
       }
 
-      /* ====== Link rows (three columns) ====== */
       .rows{border-top:1px solid var(--line); margin-top:36px; padding-top:24px}
       .rowgrid{display:grid; gap:28px; grid-template-columns: repeat(3,1fr)}
       @media (max-width: 900px){ .rowgrid{grid-template-columns:1fr} }
@@ -317,7 +315,6 @@
       }
       .dot{width:8px; height:8px; background:#e24b3a; border-radius:50%}
 
-      /* ====== Bottom notice ====== */
       .notice{
         background:#fff; color:#111; border-radius:12px; padding:18px 20px; margin: clamp(18px,4vw,48px) auto;
         max-width: var(--maxw);
@@ -326,7 +323,6 @@
       .notice a{color:#0b57d0; text-decoration:underline}
       .notice strong{letter-spacing:.01em}
 
-      /* Loading indicator */
       .loading {
         display: inline-block;
         width: 20px;
@@ -377,7 +373,7 @@
 
 <!-- Top funding banner -->
 <p class="banner" role="status">
-  NASA Exoplanet Hunting - Discover information about exoplanets discovered by NASA missions
+  AstroTuff Dynamics Exoplanet Hunting - Discover information about exoplanets discovered by NASA missions
 </p>
 
 <!-- Header / Nav -->
@@ -387,7 +383,7 @@
       <strong>AstroTuff Dyanmics</strong>
     </div>
     <div class="right">
-      <a href="#">Presentation</a>
+      <a href="https://docs.google.com/presentation/d/1LN-xdl16F7kjQ5OsflvH-wKTqFg98HotgMYPw9gB7yE/edit?usp=sharing">Presentation</a>
       <a href="#">Video</a>
       <a class="pill" href="https://github.com/alexsteinerr/hunting_exoplanets">GitHub</a>
     </div>
@@ -399,14 +395,14 @@
   <div class="container hero-grid">
     <div>
       <p class="kicker">Exoplanet Archive</p>
-      <h1>NASA Exoplanet Hunting</h1>
+      <h1>AstroTuff Dynamics Exoplanet Hunting</h1>
       <p class="lead">
         Discover detailed information about exoplanets discovered by NASA missions. Explore planetary characteristics, orbits, and scientific data from the NASA Exoplanet Archive.
       </p>
       <div class="search-section">
         <form id="planetForm">
           <div class="input-group">
-            <input type="text" id="planetName" name="planet_name" placeholder="Search for an exoplanet (e.g., Kepler-186f)" required autocomplete="off">
+            <input type="text" id="planetName" name="planet_name" placeholder="Search for an exoplanet (e.g., LTT 1445 A c)" required autocomplete="off">
             <button type="submit">Explore</button>
             <div id="suggestions" class="suggestions"></div>
           </div>
@@ -479,7 +475,7 @@
     <div id="errorSection" class="error-section hidden">
       <div class="error-card">
         <h3>Exoplanet Not Found</h3>
-        <p>This exoplanet was not found in the NASA Exoplanet Archive database.</p>
+        <p>This exoplanet was not found in the AstroTuff Dynamics Exoplanet Archive database.</p>
         <p>Please try searching for another exoplanet name.</p>
       </div>
     </div>
@@ -532,7 +528,7 @@
   <div class="container rows">
     <div class="rowgrid">
       <div class="row">
-        <div class="eyebrow">NASA Missions</div>
+        <div class="eyebrow">AstroTuff Dynamics Missions</div>
         <a href="https://exoplanetarchive.ipac.caltech.edu/cgi-bin/TblView/nph-tblView?app=ExoTbls&config=cumulative">TESS Data <span class="dot" aria-hidden="true"></span></a>
         <br>
         <a href="https://exoplanetarchive.ipac.caltech.edu/cgi-bin/TblView/nph-tblView?app=ExoTbls&config=TOI">Kepler Data <span class="dot" aria-hidden="true"></span></a>
@@ -543,7 +539,7 @@
       </div>
       <div class="row">
         <div class="eyebrow">Education</div>
-        <a href="https://science.nasa.gov/exoplanets/">Exoplanet Resources <span class="dot" aria-hidden="true"></span></a>
+        <a href="https://science.AstroTuff Dynamics.gov/exoplanets/">Exoplanet Resources <span class="dot" aria-hidden="true"></span></a>
       </div>
     </div>
   </div>
@@ -551,13 +547,13 @@
 
 <!-- Bottom white notice -->
 <div class="notice" role="note" aria-live="polite">
-  <strong>NASA Exoplanet Hunting</strong> is an educational tool providing information about exoplanets discovered by NASA missions. 
-  Data is sourced from the NASA Exoplanet Archive at Caltech.
+  <strong>AstroTuff Dynamics Exoplanet Hunting</strong> is an educational tool providing information about exoplanets discovered by AstroTuff Dynamics missions. 
+  Data is sourced from the AstroTuff Dynamics Exoplanet Archive at Caltech.
 </div>
 
 <footer>
   <div class="container">
-    <p> AstroTuff Dynamics &copy; 2025 | NASA Exoplanet Hunting</p>
+    <p> AstroTuff Dynamics &copy; 2025 | AstroTuff Dynamics Exoplanet Hunting</p>
   </div>
 </footer>
 
